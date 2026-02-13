@@ -1,0 +1,148 @@
+server:
+  port: 18789
+
+spring:
+  application:
+    name: devops-agent
+  datasource:
+    url: jdbc:h2:file:./data/devopsagent;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+        format_sql: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+# DevOps Agent Configuration
+devops-agent:
+  # Gateway settings
+  gateway:
+    websocket-path: /ws/gateway
+    heartbeat-interval-seconds: 30
+    max-sessions: 100
+
+  # LLM Provider settings
+  llm:
+    provider: openai
+    model: gpt-4o
+    api-key: ${OPENAI_API_KEY:}
+    temperature: 0.1
+    max-tokens: 4096
+    timeout-seconds: 120
+
+  # Monitoring settings
+  monitoring:
+    enabled: true
+    poll-interval-seconds: 30
+    health-check-interval-seconds: 60
+    metric-retention-hours: 168
+    anomaly-detection-enabled: true
+    alert-cooldown-minutes: 5
+
+  # Playbook settings
+  playbooks:
+    directory: ./playbooks
+    auto-execute: true
+    max-execution-time-seconds: 300
+    approval-required: true
+
+  # Incident management
+  incidents:
+    auto-create: true
+    auto-assign: true
+    escalation-timeout-minutes: 15
+    max-retries: 3
+
+  # Tool policy (9-layer cascade like OpenClaw)
+  tool-policy:
+    default-profile: sre
+    profiles:
+      minimal:
+        allowed-tools:
+          - health_check
+          - metrics_query
+          - log_search
+      sre:
+        allowed-tools:
+          - health_check
+          - metrics_query
+          - log_search
+          - kubectl_exec
+          - docker_exec
+          - ssh_exec
+          - playbook_run
+          - incident_create
+          - alert_manage
+          - service_restart
+      full:
+        allowed-tools: ["*"]
+
+  # Notification channels
+  notifications:
+    slack:
+      enabled: false
+      webhook-url: ${SLACK_WEBHOOK_URL:}
+    pagerduty:
+      enabled: false
+      api-key: ${PAGERDUTY_API_KEY:}
+    email:
+      enabled: false
+      smtp-host: ${SMTP_HOST:localhost}
+      smtp-port: ${SMTP_PORT:587}
+
+  # Security settings
+  security:
+    audit-enabled: true
+    command-allowlist:
+      - kubectl
+      - docker
+      - systemctl
+      - journalctl
+      - curl
+      - wget
+      - ping
+      - traceroute
+      - dig
+      - nslookup
+      - netstat
+      - ss
+      - top
+      - htop
+      - df
+      - du
+      - free
+      - uptime
+    command-denylist:
+      - rm -rf /
+      - mkfs
+      - dd if=/dev/zero
+      - :(){ :|:& };:
+
+logging:
+  level:
+    com.example.devopsagent: INFO
+    org.springframework.web.socket: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"

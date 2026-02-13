@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DevOps SRE Agent — Dashboard</title>
+    <style>
+        /* ─── Reset & Base ─── */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg: #0f1117;
+            --bg-card: #181b23;
+            --bg-card-hover: #1e2230;
+            --bg-input: #232736;
+            --border: #2a2e3e;
+            --text: #e1e4ed;
+            --text-dim: #8b8fa3;
+            --accent: #6c72ff;
+            --accent-hover: #8287ff;
+            --green: #34d399;
+            --green-bg: rgba(52,211,153,.12);
+            --red: #f87171;
+            --red-bg: rgba(248,113,113,.12);
+            --yellow: #fbbf24;
+            --yellow-bg: rgba(251,191,36,.12);
+            --blue: #60a5fa;
+            --blue-bg: rgba(96,165,250,.12);
+            --orange: #fb923c;
+            --radius: 10px;
+            --radius-sm: 6px;
+            --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            --mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, monospace;
+        }
+        body { font-family: var(--font); background: var(--bg); color: var(--text); line-height: 1.6; min-height: 100vh; }
+        a { color: var(--accent); text-decoration: none; }
+
+        /* ─── Layout ─── */
+        .app { display: flex; min-height: 100vh; }
+        .sidebar {
+            width: 260px; background: var(--bg-card); border-right: 1px solid var(--border);
+            display: flex; flex-direction: column; flex-shrink: 0; position: fixed;
+            top: 0; left: 0; bottom: 0; z-index: 100;
+        }
+        .sidebar-brand {
+            padding: 20px 20px 16px; border-bottom: 1px solid var(--border);
+        }
+        .sidebar-brand h1 {
+            font-size: 18px; font-weight: 700; letter-spacing: -.3px;
+            background: linear-gradient(135deg, var(--accent), var(--blue));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .sidebar-brand p { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+        .sidebar-nav { flex: 1; padding: 12px 10px; overflow-y: auto; }
+        .nav-section { margin-bottom: 16px; }
+        .nav-section-title { font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-dim); padding: 0 10px; margin-bottom: 6px; }
+        .nav-item {
+            display: flex; align-items: center; gap: 10px; padding: 9px 12px;
+            border-radius: var(--radius-sm); cursor: pointer; font-size: 13px;
+            color: var(--text-dim); transition: all .15s;
+        }
+        .nav-item:hover { background: var(--bg-card-hover); color: var(--text); }
+        .nav-item.active { background: rgba(108,114,255,.12); color: var(--accent); font-weight: 500; }
+        .nav-item .icon { font-size: 16px; width: 20px; text-align: center; }
+        .nav-item .badge {
+            margin-left: auto; background: var(--red); color: #fff; font-size: 10px;
+            padding: 1px 6px; border-radius: 10px; font-weight: 600;
+        }
+        .sidebar-footer {
+            padding: 12px 16px; border-top: 1px solid var(--border); font-size: 11px; color: var(--text-dim);
+        }
+        .ws-status { display: flex; align-items: center; gap: 6px; }
+        .ws-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--red); }
+        .ws-dot.connected { background: var(--green); }
+        .main { margin-left: 260px; flex: 1; padding: 24px 28px; }
+
+        /* ─── Page Sections ─── */
+        .page { display: none; }
+        .page.active { display: block; }
+        .page-header { margin-bottom: 24px; }
+        .page-header h2 { font-size: 22px; font-weight: 700; letter-spacing: -.3px; }
+        .page-header p { color: var(--text-dim); font-size: 13px; margin-top: 4px; }
+
+        /* ─── Cards ─── */
+        .card {
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 20px; margin-bottom: 16px;
+        }
+        .card-title { font-size: 13px; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 12px; }
+
+        /* ─── Stat Grid ─── */
+        .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 20px; }
+        .stat-card {
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+            padding: 18px 20px; display: flex; align-items: center; gap: 14px;
+        }
+        .stat-icon {
+            width: 42px; height: 42px; border-radius: var(--radius-sm);
+            display: flex; align-items: center; justify-content: center; font-size: 20px;
+        }
+        .stat-icon.green { background: var(--green-bg); }
+        .stat-icon.red { background: var(--red-bg); }
+        .stat-icon.blue { background: var(--blue-bg); }
+        .stat-icon.yellow { background: var(--yellow-bg); }
+        .stat-value { font-size: 26px; font-weight: 700; line-height: 1.1; }
+        .stat-label { font-size: 12px; color: var(--text-dim); }
+
+        /* ─── Tables ─── */
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th { text-align: left; padding: 10px 12px; color: var(--text-dim); font-weight: 500; border-bottom: 1px solid var(--border); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+        td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+        tr:hover td { background: var(--bg-card-hover); }
+        .badge-status {
+            display: inline-block; padding: 2px 10px; border-radius: 12px;
+            font-size: 11px; font-weight: 600; text-transform: uppercase;
+        }
+        .badge-healthy { background: var(--green-bg); color: var(--green); }
+        .badge-unhealthy { background: var(--red-bg); color: var(--red); }
+        .badge-unknown { background: var(--yellow-bg); color: var(--yellow); }
+        .badge-degraded { background: var(--yellow-bg); color: var(--orange); }
+        .badge-open { background: var(--red-bg); color: var(--red); }
+        .badge-acknowledged { background: var(--yellow-bg); color: var(--yellow); }
+        .badge-investigating { background: var(--blue-bg); color: var(--blue); }
+        .badge-resolved { background: var(--green-bg); color: var(--green); }
+        .badge-critical { background: var(--red-bg); color: var(--red); }
+        .badge-high { background: rgba(251,146,60,.15); color: var(--orange); }
+        .badge-medium { background: var(--yellow-bg); color: var(--yellow); }
+        .badge-low { background: var(--blue-bg); color: var(--blue); }
+        .badge-info { background: rgba(148,163,184,.12); color: #94a3b8; }
+
+        /* ─── Buttons ─── */
+        .btn {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 8px 16px; border-radius: var(--radius-sm); border: none;
+            font-size: 13px; font-weight: 500; cursor: pointer; transition: all .15s;
+            font-family: var(--font);
+        }
+        .btn-primary { background: var(--accent); color: #fff; }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-secondary { background: var(--bg-input); color: var(--text); border: 1px solid var(--border); }
+        .btn-secondary:hover { background: var(--bg-card-hover); }
+        .btn-danger { background: rgba(248,113,113,.15); color: var(--red); border: 1px solid rgba(248,113,113,.25); }
+        .btn-danger:hover { background: rgba(248,113,113,.25); }
+        .btn-sm { padding: 5px 10px; font-size: 12px; }
+        .btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
+
+        /* ─── Forms ─── */
+        .form-group { margin-bottom: 14px; }
+        .form-label { display: block; font-size: 12px; font-weight: 500; color: var(--text-dim); margin-bottom: 5px; }
+        .form-input, .form-select, .form-textarea {
+            width: 100%; padding: 9px 12px; background: var(--bg-input); border: 1px solid var(--border);
+            border-radius: var(--radius-sm); color: var(--text); font-size: 13px;
+            font-family: var(--font); transition: border-color .15s;
+        }
+        .form-input:focus, .form-select:focus, .form-textarea:focus { outline: none; border-color: var(--accent); }
+        .form-textarea { min-height: 80px; resize: vertical; font-family: var(--mono); font-size: 12px; }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .form-inline { display: flex; gap: 8px; }
+        .form-inline .form-input { flex: 1; }
+
+        /* ─── Agent Chat ─── */
+        .chat-container { display: flex; flex-direction: column; height: calc(100vh - 140px); }
+        .chat-messages {
+            flex: 1; overflow-y: auto; padding: 16px 0; display: flex; flex-direction: column; gap: 12px;
+        }
+        .chat-msg {
+            max-width: 85%; padding: 12px 16px; border-radius: var(--radius); font-size: 13px; line-height: 1.65;
+        }
+        .chat-msg.user { background: rgba(108,114,255,.15); align-self: flex-end; border-bottom-right-radius: 2px; }
+        .chat-msg.assistant { background: var(--bg-card); border: 1px solid var(--border); align-self: flex-start; border-bottom-left-radius: 2px; }
+        .chat-msg.system { background: var(--yellow-bg); color: var(--yellow); align-self: center; font-size: 12px; padding: 6px 14px; }
+        .chat-msg pre { background: var(--bg); padding: 10px; border-radius: var(--radius-sm); overflow-x: auto; font-size: 12px; margin-top: 8px; font-family: var(--mono); }
+        .chat-input-area { display: flex; gap: 8px; padding-top: 12px; border-top: 1px solid var(--border); }
+        .chat-input-area .form-input { flex: 1; }
+
+        /* ─── Event Log ─── */
+        .event-log {
+            max-height: 350px; overflow-y: auto; font-family: var(--mono); font-size: 12px;
+            background: var(--bg); border-radius: var(--radius-sm); padding: 12px;
+            border: 1px solid var(--border);
+        }
+        .event-entry { padding: 4px 0; border-bottom: 1px solid rgba(42,46,62,.5); display: flex; gap: 10px; }
+        .event-time { color: var(--text-dim); white-space: nowrap; min-width: 80px; }
+        .event-method { color: var(--accent); font-weight: 600; min-width: 180px; }
+        .event-data { color: var(--text); word-break: break-all; }
+
+        /* ─── Modal ─── */
+        .modal-overlay {
+            display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6);
+            z-index: 1000; justify-content: center; align-items: center;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal {
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+            width: 520px; max-width: 90vw; max-height: 85vh; overflow-y: auto; padding: 24px;
+        }
+        .modal h3 { font-size: 16px; margin-bottom: 16px; }
+
+        /* ─── Architecture Diagram ─── */
+        .arch-flow { display: flex; flex-direction: column; gap: 12px; align-items: center; padding: 20px 0; }
+        .arch-box {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius);
+            padding: 14px 24px; text-align: center; width: 100%; max-width: 600px;
+        }
+        .arch-box h4 { color: var(--accent); font-size: 13px; margin-bottom: 4px; }
+        .arch-box p { font-size: 12px; color: var(--text-dim); }
+        .arch-arrow { color: var(--text-dim); font-size: 20px; }
+        .arch-row { display: flex; gap: 12px; width: 100%; max-width: 600px; }
+        .arch-row .arch-box { flex: 1; }
+
+        /* ─── Scrollbar ─── */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+        /* ─── Responsive ─── */
+        @media (max-width: 900px) {
+            .sidebar { width: 220px; }
+            .main { margin-left: 220px; }
+            .form-row { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 640px) {
+            .sidebar { display: none; }
+            .main { margin-left: 0; }
+        }
+        .loading { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .6s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .empty-state { text-align: center; padding: 40px 20px; color: var(--text-dim); }
+        .empty-state .icon { font-size: 36px; margin-bottom: 10px; }
+        .tag { display: inline-block; padding: 2px 8px; background: var(--bg-input); border-radius: 4px; font-size: 11px; margin-right: 4px; }
+        .tool-card { padding: 14px; background: var(--bg-input); border-radius: var(--radius-sm); border: 1px solid var(--border); }
+        .tool-card h4 { font-size: 13px; font-weight: 600; color: var(--accent); margin-bottom: 4px; }
+        .tool-card p { font-size: 12px; color: var(--text-dim); line-height: 1.5; }
+        .tool-card .tag { margin-top: 6px; }
+        .tools-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+    </style>
+</head>
+<body>
+<div class="app">
+    <!-- ─── Sidebar ─── -->
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <h1>DevOps SRE Agent</h1>
+            <p>OpenClaw Architecture</p>
+        </div>
+        <nav class="sidebar-nav">
+            <div class="nav-section">
+                <div class="nav-section-title">Overview</div>
+                <div class="nav-item active" data-page="dashboard"><span class="icon">📊</span> Dashboard</div>
+                <div class="nav-item" data-page="architecture"><span class="icon">🏗️</span> How It Works</div>
+            </div>
+            <div class="nav-section">
+                <div class="nav-section-title">Agent</div>
+                <div class="nav-item" data-page="chat"><span class="icon">💬</span> Agent Chat</div>
+                <div class="nav-item" data-page="tools"><span class="icon">🔧</span> Tools</div>
+            </div>
+            <div class="nav-section">
+                <div class="nav-section-title">Operations</div>
+                <div class="nav-item" data-page="monitoring"><span class="icon">📡</span> Monitoring</div>
+                <div class="nav-item" data-page="incidents"><span class="icon">🚨</span> Incidents <span class="badge" id="incident-badge" style="display:none">0</span></div>
+                <div class="nav-item" data-page="alerts"><span class="icon">🔔</span> Alert Rules</div>
+                <div class="nav-item" data-page="playbooks"><span class="icon">📋</span> Playbooks</div>
+            </div>
+            <div class="nav-section">
+                <div class="nav-section-title">System</div>
+                <div class="nav-item" data-page="events"><span class="icon">📜</span> Live Events</div>
+                <div class="nav-item" data-page="security"><span class="icon">🛡️</span> Security Audit</div>
+            </div>
+        </nav>
+        <div class="sidebar-footer">
+            <div class="ws-status">
+                <span class="ws-dot" id="ws-dot"></span>
+                <span id="ws-label">Disconnected</span>
+            </div>
+        </div>
+    </aside>
+
+    <!-- ─── Main Content ─── -->
+    <main class="main">
+
+        <!-- Dashboard -->
+        <div class="page active" id="page-dashboard">
+            <div class="page-header">
+                <h2>Dashboard</h2>
+                <p>Real-time overview of your production systems</p>
+            </div>
+            <div class="stat-grid" id="stats-grid">
+                <div class="stat-card"><div class="stat-icon green">✅</div><div><div class="stat-value" id="stat-healthy">-</div><div class="stat-label">Healthy Services</div></div></div>
+                <div class="stat-card"><div class="stat-icon red">❌</div><div><div class="stat-value" id="stat-unhealthy">-</div><div class="stat-label">Unhealthy Services</div></div></div>
+                <div class="stat-card"><div class="stat-icon yellow">⚠️</div><div><div class="stat-value" id="stat-incidents">-</div><div class="stat-label">Active Incidents</div></div></div>
+                <div class="stat-card"><div class="stat-icon blue">🔧</div><div><div class="stat-value" id="stat-tools">-</div><div class="stat-label">Available Tools</div></div></div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                <div class="card">
+                    <div class="card-title">Monitored Services</div>
+                    <div class="table-wrap"><table><thead><tr><th>Service</th><th>Type</th><th>Status</th><th>Last Check</th></tr></thead><tbody id="dashboard-services"><tr><td colspan="4" class="empty-state">Loading...</td></tr></tbody></table></div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Recent Incidents</div>
+                    <div class="table-wrap"><table><thead><tr><th>Severity</th><th>Title</th><th>Service</th><th>Status</th></tr></thead><tbody id="dashboard-incidents"><tr><td colspan="4" class="empty-state">Loading...</td></tr></tbody></table></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Architecture / How It Works -->
+        <div class="page" id="page-architecture">
+            <div class="page-header">
+                <h2>How It Works</h2>
+                <p>Architecture based on the OpenClaw gateway-centric agent orchestration pattern</p>
+            </div>
+            <div class="card">
+                <div class="card-title">Architecture Overview</div>
+                <div class="arch-flow">
+                    <div class="arch-box" style="border-color:var(--accent);">
+                        <h4>Gateway (Port 18789)</h4>
+                        <p>WebSocket + HTTP JSON-RPC server. The center of everything — all clients, UIs, and integrations communicate through this single entry point. Manages sessions, routes messages, and broadcasts real-time events.</p>
+                    </div>
+                    <div class="arch-arrow">↕</div>
+                    <div class="arch-box" style="border-color:var(--blue);">
+                        <h4>Agent Engine (LLM-Powered Agentic Loop)</h4>
+                        <p>Receives a task → builds dynamic system prompt → sends to LLM with available tools → LLM reasons and makes tool calls → executes tools → appends results → loops until done. No explicit planner — the LLM drives the workflow through reasoning.</p>
+                    </div>
+                    <div class="arch-arrow">↕</div>
+                    <div class="arch-row">
+                        <div class="arch-box"><h4>9-Layer Tool Policy</h4><p>Profile → Provider → Global → Per-Agent → Group → Sandbox → Subagent. A deny at any layer blocks the tool.</p></div>
+                        <div class="arch-box"><h4>System Prompt Builder</h4><p>9 dynamic sections: Identity, Capabilities, Tools, Safety, Context, Monitoring, Incidents, Playbooks, Time.</p></div>
+                    </div>
+                    <div class="arch-arrow">↕</div>
+                    <div class="arch-row">
+                        <div class="arch-box"><h4>12 SRE Tools</h4><p>health_check, metrics_query, log_search, kubectl, docker, ssh, service_restart, playbook_run, incident &amp; alert management, diagnostics.</p></div>
+                        <div class="arch-box"><h4>Playbook Engine</h4><p>YAML runbooks with ordered steps, retry/abort handling, dry-run support, and variable parameterization.</p></div>
+                    </div>
+                    <div class="arch-arrow">↕</div>
+                    <div class="arch-row">
+                        <div class="arch-box"><h4>Monitoring Service</h4><p>Scheduled health checks, state transition detection, anomaly detection, auto-incident creation.</p></div>
+                        <div class="arch-box"><h4>Notification Channels</h4><p>Slack, PagerDuty, Email, WebSocket broadcasts for real-time alerts.</p></div>
+                    </div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-title">Agentic Loop (How the Agent Thinks)</div>
+                <ol style="padding-left:20px;font-size:13px;color:var(--text-dim);line-height:2;">
+                    <li><strong style="color:var(--text)">User sends a message</strong> (e.g., "Check health of all services")</li>
+                    <li><strong style="color:var(--text)">System prompt is assembled</strong> with current context (active incidents, unhealthy services, available tools)</li>
+                    <li><strong style="color:var(--text)">Message + tools sent to LLM</strong> (OpenAI GPT-4o or compatible)</li>
+                    <li><strong style="color:var(--text)">LLM responds</strong> with text and/or tool calls</li>
+                    <li><strong style="color:var(--text)">Tool calls are policy-checked</strong> against the 9-layer engine, then executed</li>
+                    <li><strong style="color:var(--text)">Results appended to conversation</strong>, sent back to LLM</li>
+                    <li><strong style="color:var(--text)">Loop continues</strong> until the LLM has enough info and responds with a final answer (max 25 iterations)</li>
+                </ol>
+            </div>
+            <div class="card">
+                <div class="card-title">Key Differences from a Regular Chatbot</div>
+                <div style="font-size:13px;color:var(--text-dim);line-height:1.8;">
+                    <p>✦ <strong style="color:var(--text)">Autonomous</strong> — it doesn't just answer questions, it takes actions (runs health checks, creates incidents, restarts services)</p>
+                    <p>✦ <strong style="color:var(--text)">Tool-using</strong> — 12 specialized SRE tools it can call to interact with real infrastructure</p>
+                    <p>✦ <strong style="color:var(--text)">Policy-governed</strong> — 9-layer security model prevents unauthorized actions</p>
+                    <p>✦ <strong style="color:var(--text)">Proactive</strong> — monitoring service runs in background, auto-creates incidents, auto-triggers playbooks</p>
+                    <p>✦ <strong style="color:var(--text)">Memory</strong> — knowledge base of past incidents helps resolve recurring issues faster</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Agent Chat -->
+        <div class="page" id="page-chat">
+            <div class="page-header">
+                <h2>Agent Chat</h2>
+                <p>Talk to the SRE Agent — it can investigate issues, run tools, and take actions</p>
+            </div>
+            <div class="chat-container">
+                <div class="chat-messages" id="chat-messages">
+                    <div class="chat-msg system">SRE Agent connected. Ask me to check health, investigate incidents, run playbooks, or diagnose issues.</div>
+                </div>
+                <div class="chat-input-area">
+                    <input class="form-input" id="chat-input" placeholder="e.g. Check the health of all monitored services..." onkeydown="if(event.key==='Enter')sendChat()">
+                    <button class="btn btn-primary" onclick="sendChat()">Send</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tools -->
+        <div class="page" id="page-tools">
+            <div class="page-header">
+                <h2>Agent Tools</h2>
+                <p>All SRE tools available to the agent, filtered by the 9-layer policy engine</p>
+            </div>
+            <div class="tools-grid" id="tools-grid">
+                <div class="empty-state"><div class="loading"></div><br>Loading tools...</div>
+            </div>
+        </div>
+
+        <!-- Monitoring -->
+        <div class="page" id="page-monitoring">
+            <div class="page-header">
+                <h2>Service Monitoring</h2>
+                <p>Register services and monitor their health in real-time</p>
+            </div>
+            <div class="btn-group" style="margin-bottom:16px;">
+                <button class="btn btn-primary" onclick="openModal('add-service-modal')">+ Add Service</button>
+                <button class="btn btn-secondary" onclick="refreshServices()">↻ Refresh</button>
+            </div>
+            <div class="card">
+                <div class="table-wrap"><table><thead><tr><th>Service</th><th>Type</th><th>Endpoint</th><th>Status</th><th>Failures</th><th>Last Check</th><th>Actions</th></tr></thead><tbody id="monitoring-services"><tr><td colspan="7" class="empty-state">Loading...</td></tr></tbody></table></div>
+            </div>
+        </div>
+
+        <!-- Incidents -->
+        <div class="page" id="page-incidents">
+            <div class="page-header">
+                <h2>Incidents</h2>
+                <p>Track and manage production incidents</p>
+            </div>
+            <div class="btn-group" style="margin-bottom:16px;">
+                <button class="btn btn-primary" onclick="openModal('create-incident-modal')">+ Create Incident</button>
+                <button class="btn btn-secondary" onclick="refreshIncidents()">↻ Refresh</button>
+            </div>
+            <div class="card">
+                <div class="table-wrap"><table><thead><tr><th>Severity</th><th>Title</th><th>Service</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead><tbody id="incidents-table"><tr><td colspan="6" class="empty-state">Loading...</td></tr></tbody></table></div>
+            </div>
+        </div>
+
+        <!-- Alert Rules -->
+        <div class="page" id="page-alerts">
+            <div class="page-header">
+                <h2>Alert Rules</h2>
+                <p>Define thresholds and conditions for automated alerting</p>
+            </div>
+            <div class="btn-group" style="margin-bottom:16px;">
+                <button class="btn btn-primary" onclick="openModal('create-alert-modal')">+ Create Alert Rule</button>
+                <button class="btn btn-secondary" onclick="refreshAlerts()">↻ Refresh</button>
+            </div>
+            <div class="card">
+                <div class="table-wrap"><table><thead><tr><th>Name</th><th>Metric</th><th>Condition</th><th>Severity</th><th>Enabled</th><th>Triggered</th><th>Actions</th></tr></thead><tbody id="alerts-table"><tr><td colspan="7" class="empty-state">Loading...</td></tr></tbody></table></div>
+            </div>
+        </div>
+
+        <!-- Playbooks -->
+        <div class="page" id="page-playbooks">
+            <div class="page-header">
+                <h2>Playbooks</h2>
+                <p>YAML-based runbooks for automated remediation</p>
+            </div>
+            <div class="btn-group" style="margin-bottom:16px;">
+                <button class="btn btn-secondary" onclick="loadPlaybooks()">↻ Reload Playbooks</button>
+            </div>
+            <div id="playbooks-list"><div class="empty-state"><div class="loading"></div><br>Loading playbooks...</div></div>
+        </div>
+
+        <!-- Live Events -->
+        <div class="page" id="page-events">
+            <div class="page-header">
+                <h2>Live Events</h2>
+                <p>Real-time WebSocket event stream from the gateway</p>
+            </div>
+            <div class="card">
+                <div class="card-title">WebSocket Events</div>
+                <div class="event-log" id="event-log">
+                    <div style="color:var(--text-dim)">Waiting for events...</div>
+                </div>
+            </div>
+            <div class="card" style="margin-top:16px;">
+                <div class="card-title">Send RPC Command</div>
+                <div class="form-inline">
+                    <select class="form-select" id="rpc-method" style="width:220px;">
+                        <option value="gateway.status">gateway.status</option>
+                        <option value="gateway.methods">gateway.methods</option>
+                        <option value="monitor.health">monitor.health</option>
+                        <option value="monitor.services">monitor.services</option>
+                        <option value="incident.list">incident.list</option>
+                        <option value="playbook.list">playbook.list</option>
+                        <option value="tool.list">tool.list</option>
+                        <option value="plugin.list">plugin.list</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="sendRpc()">Send RPC</button>
+                </div>
+                <pre id="rpc-result" style="margin-top:12px;background:var(--bg);padding:12px;border-radius:var(--radius-sm);font-size:12px;font-family:var(--mono);max-height:300px;overflow:auto;color:var(--text-dim);">Results will appear here...</pre>
+            </div>
+        </div>
+
+        <!-- Security Audit -->
+        <div class="page" id="page-security">
+            <div class="page-header">
+                <h2>Security Audit</h2>
+                <p>Automated security checks for configuration and policy</p>
+            </div>
+            <div class="btn-group" style="margin-bottom:16px;">
+                <button class="btn btn-primary" onclick="runSecurityAudit()">Run Audit</button>
+            </div>
+            <div id="security-findings"><div class="empty-state">Click "Run Audit" to check your configuration</div></div>
+        </div>
+
+    </main>
+</div>
+
+<!-- ─── Modals ─── -->
+<div class="modal-overlay" id="add-service-modal">
+    <div class="modal">
+        <h3>Register Service for Monitoring</h3>
+        <div class="form-group"><label class="form-label">Service Name</label><input class="form-input" id="svc-name" placeholder="e.g. payment-service"></div>
+        <div class="form-group"><label class="form-label">Display Name</label><input class="form-input" id="svc-display" placeholder="e.g. Payment Service"></div>
+        <div class="form-row">
+            <div class="form-group"><label class="form-label">Type</label><select class="form-select" id="svc-type"><option>HTTP</option><option>TCP</option><option>KUBERNETES_DEPLOYMENT</option><option>DOCKER_CONTAINER</option></select></div>
+            <div class="form-group"><label class="form-label">Check Interval (sec)</label><input class="form-input" id="svc-interval" type="number" value="60"></div>
+        </div>
+        <div class="form-group"><label class="form-label">Health Endpoint</label><input class="form-input" id="svc-endpoint" placeholder="http://localhost:8080/actuator/health"></div>
+        <div class="form-row">
+            <div class="form-group"><label class="form-label">Namespace</label><input class="form-input" id="svc-namespace" placeholder="default"></div>
+            <div class="form-group"><label class="form-label">Cluster</label><input class="form-input" id="svc-cluster" placeholder="production"></div>
+        </div>
+        <div class="btn-group" style="margin-top:16px;justify-content:flex-end;">
+            <button class="btn btn-secondary" onclick="closeModal('add-service-modal')">Cancel</button>
+            <button class="btn btn-primary" onclick="addService()">Register Service</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="create-incident-modal">
+    <div class="modal">
+        <h3>Create Incident</h3>
+        <div class="form-group"><label class="form-label">Title</label><input class="form-input" id="inc-title" placeholder="e.g. High latency on payment service"></div>
+        <div class="form-row">
+            <div class="form-group"><label class="form-label">Severity</label><select class="form-select" id="inc-severity"><option>CRITICAL</option><option>HIGH</option><option selected>MEDIUM</option><option>LOW</option><option>INFO</option></select></div>
+            <div class="form-group"><label class="form-label">Service</label><input class="form-input" id="inc-service" placeholder="payment-service"></div>
+        </div>
+        <div class="form-group"><label class="form-label">Description</label><textarea class="form-textarea" id="inc-desc" placeholder="Describe the incident..."></textarea></div>
+        <div class="btn-group" style="margin-top:16px;justify-content:flex-end;">
+            <button class="btn btn-secondary" onclick="closeModal('create-incident-modal')">Cancel</button>
+            <button class="btn btn-primary" onclick="createIncident()">Create Incident</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="create-alert-modal">
+    <div class="modal">
+        <h3>Create Alert Rule</h3>
+        <div class="form-group"><label class="form-label">Rule Name</label><input class="form-input" id="alert-name" placeholder="e.g. High Error Rate"></div>
+        <div class="form-row">
+            <div class="form-group"><label class="form-label">Metric</label><input class="form-input" id="alert-metric" placeholder="e.g. http_errors_total"></div>
+            <div class="form-group"><label class="form-label">Condition</label><select class="form-select" id="alert-condition"><option>GREATER_THAN</option><option>LESS_THAN</option><option>EQUALS</option><option>NOT_EQUALS</option><option>RATE_INCREASE</option><option>ABSENT</option></select></div>
+        </div>
+        <div class="form-row">
+            <div class="form-group"><label class="form-label">Threshold</label><input class="form-input" id="alert-threshold" type="number" placeholder="100"></div>
+            <div class="form-group"><label class="form-label">Severity</label><select class="form-select" id="alert-severity"><option>CRITICAL</option><option>HIGH</option><option selected>MEDIUM</option><option>LOW</option></select></div>
+        </div>
+        <div class="form-row">
+            <div class="form-group"><label class="form-label">Service</label><input class="form-input" id="alert-service" placeholder="payment-service"></div>
+            <div class="form-group"><label class="form-label">Duration (sec)</label><input class="form-input" id="alert-duration" type="number" value="300"></div>
+        </div>
+        <div class="btn-group" style="margin-top:16px;justify-content:flex-end;">
+            <button class="btn btn-secondary" onclick="closeModal('create-alert-modal')">Cancel</button>
+            <button class="btn btn-primary" onclick="createAlert()">Create Alert</button>
+        </div>
+    </div>
+</div>
+
+<script>
+// ─── Config ───
+const API = '';
+let ws = null;
+let rpcId = 0;
+
+// ─── Navigation ───
+document.querySelectorAll('.nav-item[data-page]').forEach(item => {
+    item.addEventListener('click', () => {
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+        item.classList.add('active');
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        document.getElementById('page-' + item.dataset.page).classList.add('active');
+    });
+});
+
+// ─── Modal ───
+function openModal(id) { document.getElementById(id).classList.add('active'); }
+function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+document.querySelectorAll('.modal-overlay').forEach(o => o.addEventListener('click', e => { if (e.target === o) o.classList.remove('active'); }));
+
+// ─── API Helpers ───
+async function api(path, opts = {}) {
+    try {
+        const res = await fetch(API + path, { headers: { 'Content-Type': 'application/json' }, ...opts });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+    } catch (e) { console.error('API error:', path, e); return null; }
+}
+
+// ─── WebSocket ───
+function connectWs() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(`${proto}://${location.host}/ws/gateway`);
+    ws.onopen = () => {
+        document.getElementById('ws-dot').classList.add('connected');
+        document.getElementById('ws-label').textContent = 'Connected';
+        addEvent('system', 'WebSocket connected to gateway');
+    };
+    ws.onclose = () => {
+        document.getElementById('ws-dot').classList.remove('connected');
+        document.getElementById('ws-label').textContent = 'Disconnected';
+        addEvent('system', 'WebSocket disconnected — reconnecting in 3s...');
+        setTimeout(connectWs, 3000);
+    };
+    ws.onmessage = (e) => {
+        try {
+            const msg = JSON.parse(e.data);
+            if (msg.method) {
+                addEvent(msg.method, JSON.stringify(msg.params || {}));
+                handleBroadcast(msg);
+            }
+            if (msg.id && rpcCallbacks[msg.id]) {
+                rpcCallbacks[msg.id](msg);
+                delete rpcCallbacks[msg.id];
+            }
+        } catch (err) { console.error('WS parse error', err); }
+    };
+}
+const rpcCallbacks = {};
+function sendWsRpc(method, params) {
+    return new Promise(resolve => {
+        const id = String(++rpcId);
+        rpcCallbacks[id] = resolve;
+        ws.send(JSON.stringify({ jsonrpc: '2.0', id, method, params }));
+    });
+}
+
+function handleBroadcast(msg) {
+    if (msg.method === 'monitor.health_update' || msg.method === 'monitor.service_recovered') refreshDashboard();
+    if (msg.method === 'incident.created' || msg.method === 'alert.triggered') { refreshDashboard(); refreshIncidents(); }
+    if (msg.method === 'playbook.completed') addEvent(msg.method, `Playbook finished: ${msg.params?.status}`);
+}
+
+// ─── Event Log ───
+function addEvent(method, data) {
+    const log = document.getElementById('event-log');
+    const first = log.querySelector('div:first-child');
+    if (first && first.textContent.includes('Waiting for')) first.remove();
+    const t = new Date().toLocaleTimeString();
+    const entry = document.createElement('div');
+    entry.className = 'event-entry';
+    entry.innerHTML = `<span class="event-time">${t}</span><span class="event-method">${method}</span><span class="event-data">${data.substring(0, 300)}</span>`;
+    log.prepend(entry);
+    if (log.children.length > 200) log.lastChild.remove();
+}
+
+// ─── Dashboard ───
+async function refreshDashboard() {
+    const [status, incidents] = await Promise.all([
+        api('/api/gateway/status'),
+        api('/api/incidents/active')
+    ]);
+    if (status) {
+        const m = status.monitoring || {};
+        document.getElementById('stat-healthy').textContent = m.healthy ?? 0;
+        document.getElementById('stat-unhealthy').textContent = m.unhealthy ?? 0;
+        document.getElementById('stat-incidents').textContent = status.incidents?.active ?? 0;
+        document.getElementById('stat-tools').textContent = status.agent?.tools_registered ?? 0;
+
+        const badge = document.getElementById('incident-badge');
+        const activeCount = status.incidents?.active ?? 0;
+        if (activeCount > 0) { badge.textContent = activeCount; badge.style.display = ''; }
+        else { badge.style.display = 'none'; }
+
+        // Service table
+        const services = m.services || [];
+        const tbody = document.getElementById('dashboard-services');
+        if (services.length === 0) { tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No services registered. Go to Monitoring to add one.</td></tr>'; }
+        else {
+            tbody.innerHTML = services.map(s => `<tr>
+                <td><strong>${s.name}</strong></td>
+                <td><span class="tag">${s.type || 'HTTP'}</span></td>
+                <td><span class="badge-status badge-${s.status?.toLowerCase()}">${s.status}</span></td>
+                <td style="color:var(--text-dim);font-size:12px">${s.lastCheck === 'never' ? 'Never' : new Date(s.lastCheck).toLocaleTimeString()}</td>
+            </tr>`).join('');
+        }
+    }
+    // Incidents table
+    if (incidents) {
+        const tbody = document.getElementById('dashboard-incidents');
+        if (incidents.length === 0) { tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No active incidents</td></tr>'; }
+        else {
+            tbody.innerHTML = incidents.slice(0, 8).map(i => `<tr>
+                <td><span class="badge-status badge-${i.severity?.toLowerCase()}">${i.severity}</span></td>
+                <td>${i.title}</td>
+                <td>${i.service || '-'}</td>
+                <td><span class="badge-status badge-${i.status?.toLowerCase()}">${i.status}</span></td>
+            </tr>`).join('');
+        }
+    }
+}
+
+// ─── Monitoring ───
+async function refreshServices() {
+    const services = await api('/api/monitoring/services');
+    const tbody = document.getElementById('monitoring-services');
+    if (!services || services.length === 0) { tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No services registered yet. Click "+ Add Service" to start monitoring.</td></tr>'; return; }
+    tbody.innerHTML = services.map(s => `<tr>
+        <td><strong>${s.name}</strong><br><span style="font-size:11px;color:var(--text-dim)">${s.displayName || ''}</span></td>
+        <td><span class="tag">${s.type}</span></td>
+        <td style="font-size:12px;font-family:var(--mono)">${s.healthEndpoint || '-'}</td>
+        <td><span class="badge-status badge-${s.healthStatus?.toLowerCase()}">${s.healthStatus}</span></td>
+        <td>${s.consecutiveFailures || 0}</td>
+        <td style="font-size:12px;color:var(--text-dim)">${s.lastCheckAt ? new Date(s.lastCheckAt).toLocaleString() : 'Never'}</td>
+        <td>
+            <button class="btn btn-sm btn-secondary" onclick="checkServiceHealth('${s.name}')">Check Now</button>
+            <button class="btn btn-sm btn-danger" onclick="deleteService('${s.id}')">Delete</button>
+        </td>
+    </tr>`).join('');
+}
+async function addService() {
+    const body = {
+        name: document.getElementById('svc-name').value,
+        displayName: document.getElementById('svc-display').value,
+        type: document.getElementById('svc-type').value,
+        healthEndpoint: document.getElementById('svc-endpoint').value,
+        namespace: document.getElementById('svc-namespace').value || null,
+        cluster: document.getElementById('svc-cluster').value || null,
+        checkIntervalSeconds: parseInt(document.getElementById('svc-interval').value) || 60,
+        enabled: true
+    };
+    await api('/api/monitoring/services', { method: 'POST', body: JSON.stringify(body) });
+    closeModal('add-service-modal');
+    refreshServices();
+    refreshDashboard();
+}
+async function checkServiceHealth(name) {
+    const res = await api(`/api/monitoring/services/${name}/check`, { method: 'POST' });
+    if (res) {
+        const status = res.healthy ? '✅ HEALTHY' : '❌ UNHEALTHY';
+        alert(`${status}\n${res.message}\nResponse time: ${res.duration_ms}ms`);
+        refreshServices();
+        refreshDashboard();
+    }
+}
+async function deleteService(id) {
+    if (!confirm('Remove this service from monitoring?')) return;
+    await api(`/api/monitoring/services/${id}`, { method: 'DELETE' });
+    refreshServices();
+    refreshDashboard();
+}
+
+// ─── Incidents ───
+async function refreshIncidents() {
+    const incidents = await api('/api/incidents');
+    const tbody = document.getElementById('incidents-table');
+    if (!incidents || incidents.length === 0) { tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No incidents yet.</td></tr>'; return; }
+    tbody.innerHTML = incidents.map(i => `<tr>
+        <td><span class="badge-status badge-${i.severity?.toLowerCase()}">${i.severity}</span></td>
+        <td><strong>${i.title}</strong><br><span style="font-size:11px;color:var(--text-dim)">${(i.description || '').substring(0, 80)}</span></td>
+        <td>${i.service || '-'}</td>
+        <td><span class="badge-status badge-${i.status?.toLowerCase()}">${i.status}</span></td>
+        <td style="font-size:12px;color:var(--text-dim)">${new Date(i.createdAt).toLocaleString()}</td>
+        <td>
+            ${i.status !== 'RESOLVED' && i.status !== 'CLOSED' ? `<button class="btn btn-sm btn-secondary" onclick="resolveIncident('${i.id}')">Resolve</button>` : ''}
+        </td>
+    </tr>`).join('');
+}
+async function createIncident() {
+    const body = {
+        title: document.getElementById('inc-title').value,
+        severity: document.getElementById('inc-severity').value,
+        service: document.getElementById('inc-service').value,
+        description: document.getElementById('inc-desc').value,
+        status: 'OPEN'
+    };
+    await api('/api/incidents', { method: 'POST', body: JSON.stringify(body) });
+    closeModal('create-incident-modal');
+    refreshIncidents();
+    refreshDashboard();
+}
+async function resolveIncident(id) {
+    const resolution = prompt('Resolution notes:');
+    if (resolution === null) return;
+    await api(`/api/incidents/${id}/resolve`, { method: 'POST', body: JSON.stringify({ resolution }) });
+    refreshIncidents();
+    refreshDashboard();
+}
+
+// ─── Alerts ───
+async function refreshAlerts() {
+    const alerts = await api('/api/alerts');
+    const tbody = document.getElementById('alerts-table');
+    if (!alerts || alerts.length === 0) { tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No alert rules configured. Click "+ Create Alert Rule" to add one.</td></tr>'; return; }
+    tbody.innerHTML = alerts.map(a => `<tr>
+        <td><strong>${a.name}</strong></td>
+        <td style="font-family:var(--mono);font-size:12px">${a.metric}</td>
+        <td>${a.condition} ${a.threshold}</td>
+        <td><span class="badge-status badge-${a.severity?.toLowerCase()}">${a.severity}</span></td>
+        <td>${a.enabled ? '<span style="color:var(--green)">Yes</span>' : '<span style="color:var(--text-dim)">No</span>'}</td>
+        <td>${a.triggerCount || 0}</td>
+        <td><button class="btn btn-sm btn-danger" onclick="deleteAlert('${a.id}')">Delete</button></td>
+    </tr>`).join('');
+}
+async function createAlert() {
+    const body = {
+        name: document.getElementById('alert-name').value,
+        metric: document.getElementById('alert-metric').value,
+        condition: document.getElementById('alert-condition').value,
+        threshold: parseFloat(document.getElementById('alert-threshold').value),
+        severity: document.getElementById('alert-severity').value,
+        serviceName: document.getElementById('alert-service').value,
+        durationSeconds: parseInt(document.getElementById('alert-duration').value) || 300,
+        enabled: true
+    };
+    await api('/api/alerts', { method: 'POST', body: JSON.stringify(body) });
+    closeModal('create-alert-modal');
+    refreshAlerts();
+}
+async function deleteAlert(id) {
+    if (!confirm('Delete this alert rule?')) return;
+    await api(`/api/alerts/${id}`, { method: 'DELETE' });
+    refreshAlerts();
+}
+
+// ─── Tools ───
+async function loadTools() {
+    const tools = await api('/api/agent/tools');
+    const grid = document.getElementById('tools-grid');
+    if (!tools || Object.keys(tools).length === 0) { grid.innerHTML = '<div class="empty-state">No tools available</div>'; return; }
+    grid.innerHTML = Object.entries(tools).map(([name, desc]) => {
+        const [cat, ...rest] = desc.split(' - ');
+        const catIcon = { monitoring: '📡', infrastructure: '🏗️', remediation: '🔧', diagnostics: '🔍', incident: '🚨', alerting: '🔔' }[cat.trim()] || '⚙️';
+        return `<div class="tool-card">
+            <h4>${catIcon} ${name}</h4>
+            <p>${rest.join(' - ')}</p>
+            <span class="tag">${cat.trim()}</span>
+        </div>`;
+    }).join('');
+}
+
+// ─── Playbooks ───
+async function loadPlaybooks() {
+    const data = await api('/api/playbooks');
+    const container = document.getElementById('playbooks-list');
+    if (!data || !data.playbooks) { container.innerHTML = '<div class="empty-state">No playbooks available</div>'; return; }
+    const lines = data.playbooks.split('\n').filter(l => l.startsWith('- '));
+    if (lines.length === 0) { container.innerHTML = '<div class="empty-state">No playbooks found</div>'; return; }
+    container.innerHTML = lines.map(line => {
+        const match = line.match(/^- (.+?):\s*(.+?)\s*\((\d+) steps?,\s*approval:\s*(\w+)\)/);
+        if (!match) return `<div class="card"><p>${line}</p></div>`;
+        const [, id, name, steps, approval] = match;
+        return `<div class="card" style="display:flex;align-items:center;justify-content:space-between;">
+            <div>
+                <strong>${name}</strong>
+                <div style="font-size:12px;color:var(--text-dim);margin-top:4px;">
+                    ID: <code>${id}</code> &nbsp;|&nbsp; ${steps} steps &nbsp;|&nbsp; Approval: ${approval}
+                </div>
+            </div>
+            <div class="btn-group">
+                <button class="btn btn-sm btn-secondary" onclick="dryRunPlaybook('${id}')">Dry Run</button>
+            </div>
+        </div>`;
+    }).join('');
+}
+async function dryRunPlaybook(id) {
+    const params = prompt('Parameters as JSON (or leave empty):', '{}');
+    if (params === null) return;
+    let parsed = {};
+    try { parsed = JSON.parse(params); } catch(e) { alert('Invalid JSON'); return; }
+    const res = await api(`/api/playbooks/${id}/execute`, {
+        method: 'POST',
+        body: JSON.stringify({ dry_run: true, parameters: parsed })
+    });
+    if (res) alert(res.result || JSON.stringify(res));
+}
+
+// ─── Agent Chat ───
+async function sendChat() {
+    const input = document.getElementById('chat-input');
+    const msg = input.value.trim();
+    if (!msg) return;
+    input.value = '';
+    appendChat('user', msg);
+    appendChat('assistant', '<div class="loading"></div> Thinking...');
+    const res = await api('/api/agent/chat', {
+        method: 'POST',
+        body: JSON.stringify({ message: msg })
+    });
+    // Remove loading message
+    const msgs = document.getElementById('chat-messages');
+    msgs.lastChild.remove();
+    if (res && res.response) {
+        let text = res.response;
+        if (res.tools_used && res.tools_used.length > 0) text += `\n\n🔧 Tools used: ${res.tools_used.join(', ')}`;
+        appendChat('assistant', formatResponse(text));
+    } else {
+        appendChat('assistant', 'Error: Could not get a response. Make sure OPENAI_API_KEY is set.');
+    }
+}
+function appendChat(role, html) {
+    const msgs = document.getElementById('chat-messages');
+    const div = document.createElement('div');
+    div.className = `chat-msg ${role}`;
+    div.innerHTML = html;
+    msgs.appendChild(div);
+    msgs.scrollTop = msgs.scrollHeight;
+}
+function formatResponse(text) {
+    // Basic markdown-like formatting
+    return text
+        .replace(/```([\s\S]*?)```/g, '<pre>$1</pre>')
+        .replace(/`([^`]+)`/g, '<code style="background:var(--bg);padding:2px 5px;border-radius:3px;font-size:12px">$1</code>')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\n/g, '<br>');
+}
+
+// ─── RPC Commands ───
+async function sendRpc() {
+    const method = document.getElementById('rpc-method').value;
+    const resultEl = document.getElementById('rpc-result');
+    resultEl.textContent = 'Sending...';
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        const res = await sendWsRpc(method, {});
+        resultEl.textContent = JSON.stringify(res, null, 2);
+    } else {
+        resultEl.textContent = 'WebSocket not connected. Connect first.';
+    }
+}
+
+// ─── Security Audit ───
+async function runSecurityAudit() {
+    const data = await api('/api/security/audit');
+    const container = document.getElementById('security-findings');
+    if (!data || !data.findings || data.findings.length === 0) {
+        container.innerHTML = '<div class="card"><div class="empty-state">No security findings. Your configuration looks good!</div></div>';
+        return;
+    }
+    container.innerHTML = data.findings.map(f => {
+        const color = f.severity === 'CRITICAL' ? 'red' : f.severity === 'WARN' ? 'yellow' : 'blue';
+        return `<div class="card" style="border-left:3px solid var(--${color});">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+                <span class="badge-status badge-${f.severity?.toLowerCase() === 'warn' ? 'medium' : f.severity?.toLowerCase()}">${f.severity}</span>
+                <strong>${f.category}</strong>
+            </div>
+            <p style="font-size:13px;">${f.message}</p>
+            <p style="font-size:12px;color:var(--text-dim);margin-top:6px;">💡 ${f.remediation}</p>
+        </div>`;
+    }).join('');
+}
+
+// ─── Init ───
+connectWs();
+refreshDashboard();
+setTimeout(() => { loadTools(); refreshServices(); refreshIncidents(); refreshAlerts(); loadPlaybooks(); }, 500);
+setInterval(refreshDashboard, 15000);
+</script>
+</body>
+</html>

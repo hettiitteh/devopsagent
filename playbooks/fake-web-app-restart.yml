@@ -1,0 +1,58 @@
+---
+id: "fake-web-app-restart"
+name: "Fake Web App Auto-Restart"
+description: "Diagnose and restart the fake-web-app when it becomes unhealthy"
+version: "1.0"
+author: "sre-team"
+triggers:
+  - type: "service_unhealthy"
+    service: "fake-web-app"
+    severity: "HIGH"
+steps:
+  - order: 1
+    name: "Verify service is down"
+    tool: "health_check"
+    parameters:
+      url: "http://localhost:9090"
+    onFailure: "continue"
+    maxRetries: 0
+    retryDelaySeconds: 0
+    timeoutSeconds: 10
+  - order: 2
+    name: "Check if port 9090 is open"
+    tool: "network_diag"
+    parameters:
+      command: "port_check"
+      target: "localhost"
+      port: 9090
+    onFailure: "continue"
+    maxRetries: 0
+    retryDelaySeconds: 0
+    timeoutSeconds: 10
+  - order: 3
+    name: "Restart the service"
+    tool: "service_restart"
+    parameters:
+      service_type: "docker"
+      service_name: "fake-web-app"
+      graceful: true
+    onFailure: "continue"
+    maxRetries: 0
+    retryDelaySeconds: 0
+    timeoutSeconds: 30
+  - order: 4
+    name: "Verify recovery"
+    tool: "health_check"
+    parameters:
+      url: "http://localhost:9090"
+    onFailure: "retry"
+    maxRetries: 3
+    retryDelaySeconds: 5
+    timeoutSeconds: 10
+variables: {}
+tags:
+  - "http"
+  - "restart"
+  - "fake-web-app"
+approvalRequired: false
+maxExecutionTimeSeconds: 120

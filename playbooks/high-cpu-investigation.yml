@@ -1,0 +1,62 @@
+---
+id: "high-cpu-investigation"
+name: "High CPU Investigation Playbook"
+description: "Investigate and mitigate high CPU usage on a service"
+version: "1.0"
+author: "sre-agent"
+triggers: []
+steps:
+- order: 1
+  name: "Check system resources"
+  description: null
+  tool: "system_info"
+  parameters:
+    command: "top"
+  onFailure: "continue"
+  maxRetries: 0
+  retryDelaySeconds: 0
+  timeoutSeconds: 0
+  condition: null
+- order: 2
+  name: "Check memory usage"
+  description: null
+  tool: "system_info"
+  parameters:
+    command: "free"
+  onFailure: "continue"
+  maxRetries: 0
+  retryDelaySeconds: 0
+  timeoutSeconds: 0
+  condition: null
+- order: 3
+  name: "Check disk usage"
+  description: null
+  tool: "system_info"
+  parameters:
+    command: "df"
+  onFailure: "continue"
+  maxRetries: 0
+  retryDelaySeconds: 0
+  timeoutSeconds: 0
+  condition: null
+- order: 4
+  name: "Check recent error logs"
+  description: null
+  tool: "log_search"
+  parameters:
+    source: "${log_source}"
+    lines: 50
+    pattern: "ERROR|Exception|OOM"
+    target: "${service_name}"
+  onFailure: "continue"
+  maxRetries: 0
+  retryDelaySeconds: 0
+  timeoutSeconds: 0
+  condition: null
+variables: {}
+tags:
+- "cpu"
+- "performance"
+- "investigation"
+approvalRequired: false
+maxExecutionTimeSeconds: 600

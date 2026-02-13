@@ -1,0 +1,63 @@
+---
+id: "service-restart"
+name: "Service Restart Playbook"
+description: "Safely restart an unhealthy service with health verification"
+version: "1.0"
+author: "sre-agent"
+triggers: []
+steps:
+- order: 1
+  name: "Check current health"
+  description: null
+  tool: "health_check"
+  parameters:
+    url: "${service_url}"
+  onFailure: "continue"
+  maxRetries: 0
+  retryDelaySeconds: 0
+  timeoutSeconds: 0
+  condition: null
+- order: 2
+  name: "Collect pre-restart logs"
+  description: null
+  tool: "log_search"
+  parameters:
+    source: "${log_source}"
+    lines: 50
+    target: "${service_name}"
+  onFailure: "continue"
+  maxRetries: 0
+  retryDelaySeconds: 0
+  timeoutSeconds: 0
+  condition: null
+- order: 3
+  name: "Restart service"
+  description: null
+  tool: "service_restart"
+  parameters:
+    service_type: "${service_type}"
+    service_name: "${service_name}"
+    graceful: true
+  onFailure: "abort"
+  maxRetries: 0
+  retryDelaySeconds: 0
+  timeoutSeconds: 0
+  condition: null
+- order: 4
+  name: "Wait and verify health"
+  description: null
+  tool: "health_check"
+  parameters:
+    url: "${service_url}"
+    timeout_seconds: 30
+  onFailure: "retry"
+  maxRetries: 3
+  retryDelaySeconds: 10
+  timeoutSeconds: 0
+  condition: null
+variables: {}
+tags:
+- "restart"
+- "remediation"
+approvalRequired: true
+maxExecutionTimeSeconds: 300

@@ -1,0 +1,76 @@
+---
+id: "k8s-crashloop-fix"
+name: "Kubernetes CrashLoopBackOff Fix"
+description: "Investigate and fix pods in CrashLoopBackOff state"
+version: "1.0"
+author: "sre-agent"
+triggers: []
+steps:
+- order: 1
+  name: "Get pod status"
+  description: null
+  tool: "kubectl_exec"
+  parameters:
+    command: "get pods"
+    namespace: "${namespace}"
+  onFailure: "abort"
+  maxRetries: 0
+  retryDelaySeconds: 0
+  timeoutSeconds: 0
+  condition: null
+- order: 2
+  name: "Describe failing pod"
+  description: null
+  tool: "kubectl_exec"
+  parameters:
+    command: "describe pod ${pod_name}"
+    namespace: "${namespace}"
+  onFailure: "continue"
+  maxRetries: 0
+  retryDelaySeconds: 0
+  timeoutSeconds: 0
+  condition: null
+- order: 3
+  name: "Get pod logs"
+  description: null
+  tool: "log_search"
+  parameters:
+    source: "kubectl"
+    lines: 100
+    target: "${pod_name}"
+  onFailure: "continue"
+  maxRetries: 0
+  retryDelaySeconds: 0
+  timeoutSeconds: 0
+  condition: null
+- order: 4
+  name: "Check events"
+  description: null
+  tool: "kubectl_exec"
+  parameters:
+    command: "get events --sort-by=.lastTimestamp"
+    namespace: "${namespace}"
+  onFailure: "continue"
+  maxRetries: 0
+  retryDelaySeconds: 0
+  timeoutSeconds: 0
+  condition: null
+- order: 5
+  name: "Rollout restart deployment"
+  description: null
+  tool: "kubectl_exec"
+  parameters:
+    command: "rollout restart deployment/${deployment_name}"
+    namespace: "${namespace}"
+  onFailure: "abort"
+  maxRetries: 0
+  retryDelaySeconds: 0
+  timeoutSeconds: 0
+  condition: null
+variables: {}
+tags:
+- "kubernetes"
+- "crashloop"
+- "remediation"
+approvalRequired: true
+maxExecutionTimeSeconds: 0
