@@ -258,11 +258,13 @@
                 <div class="nav-section-title">Operations</div>
                 <div class="nav-item" data-page="monitoring"><span class="icon">📡</span> Monitoring</div>
                 <div class="nav-item" data-page="incidents"><span class="icon">🚨</span> Incidents <span class="badge" id="incident-badge" style="display:none">0</span></div>
+                <div class="nav-item" data-page="approvals"><span class="icon">✋</span> Approvals <span class="badge" id="approval-badge" style="display:none">0</span></div>
                 <div class="nav-item" data-page="alerts"><span class="icon">🔔</span> Alert Rules</div>
                 <div class="nav-item" data-page="playbooks"><span class="icon">📋</span> Playbooks</div>
             </div>
             <div class="nav-section">
                 <div class="nav-section-title">System</div>
+                <div class="nav-item" data-page="audit"><span class="icon">📝</span> Audit Log</div>
                 <div class="nav-item" data-page="events"><span class="icon">📜</span> Live Events</div>
                 <div class="nav-item" data-page="security"><span class="icon">🛡️</span> Security Audit</div>
             </div>
@@ -298,6 +300,12 @@
                 <div class="card">
                     <div class="card-title">Recent Incidents</div>
                     <div class="table-wrap"><table><thead><tr><th>Severity</th><th>Title</th><th>Service</th><th>Status</th></tr></thead><tbody id="dashboard-incidents"><tr><td colspan="4" class="empty-state">Loading...</td></tr></tbody></table></div>
+                </div>
+            </div>
+            <div class="card" style="margin-top:16px;">
+                <div class="card-title">Resolution Insights (Learning)</div>
+                <div id="insights-container" style="font-size:13px;color:var(--text-dim);">
+                    <div class="empty-state">Loading insights...</div>
                 </div>
             </div>
         </div>
@@ -415,7 +423,7 @@
                 <button class="btn btn-secondary" onclick="refreshIncidents()">↻ Refresh</button>
             </div>
             <div class="card">
-                <div class="table-wrap"><table><thead><tr><th>Severity</th><th>Title</th><th>Service</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead><tbody id="incidents-table"><tr><td colspan="6" class="empty-state">Loading...</td></tr></tbody></table></div>
+                <div class="table-wrap"><table><thead><tr><th>Severity</th><th>Title</th><th>Service</th><th>Status</th><th>Escalation</th><th>Created</th><th>Actions</th></tr></thead><tbody id="incidents-table"><tr><td colspan="7" class="empty-state">Loading...</td></tr></tbody></table></div>
             </div>
         </div>
 
@@ -474,6 +482,56 @@
                     <button class="btn btn-primary" onclick="sendRpc()">Send RPC</button>
                 </div>
                 <pre id="rpc-result" style="margin-top:12px;background:var(--bg);padding:12px;border-radius:var(--radius-sm);font-size:12px;font-family:var(--mono);max-height:300px;overflow:auto;color:var(--text-dim);">Results will appear here...</pre>
+            </div>
+        </div>
+
+        <!-- Pending Approvals -->
+        <div class="page" id="page-approvals">
+            <div class="page-header">
+                <h2>Pending Approvals</h2>
+                <p>Tools requiring human confirmation before execution</p>
+            </div>
+            <div class="btn-group" style="margin-bottom:16px;">
+                <button class="btn btn-secondary" onclick="refreshApprovals()">↻ Refresh</button>
+            </div>
+            <div class="card">
+                <div class="table-wrap"><table><thead><tr><th>Tool</th><th>Parameters</th><th>Session</th><th>Requested</th><th>Status</th><th>Actions</th></tr></thead><tbody id="approvals-table"><tr><td colspan="6" class="empty-state">Loading...</td></tr></tbody></table></div>
+            </div>
+        </div>
+
+        <!-- Audit Log -->
+        <div class="page" id="page-audit">
+            <div class="page-header">
+                <h2>Audit Log</h2>
+                <p>Complete trail of all agent actions, incidents, playbooks, and system events</p>
+            </div>
+            <div class="btn-group" style="margin-bottom:16px;">
+                <select class="form-select" id="audit-actor-filter" style="width:150px;" onchange="refreshAuditLog()">
+                    <option value="">All Actors</option>
+                    <option value="agent">Agent</option>
+                    <option value="user">User</option>
+                    <option value="system">System</option>
+                    <option value="monitoring">Monitoring</option>
+                    <option value="playbook-engine">Playbook Engine</option>
+                </select>
+                <select class="form-select" id="audit-action-filter" style="width:200px;" onchange="refreshAuditLog()">
+                    <option value="">All Actions</option>
+                    <option value="TOOL_EXECUTED">Tool Executed</option>
+                    <option value="INCIDENT_CREATED">Incident Created</option>
+                    <option value="INCIDENT_RESOLVED">Incident Resolved</option>
+                    <option value="PLAYBOOK_RUN">Playbook Run</option>
+                    <option value="PLAYBOOK_COMPLETED">Playbook Completed</option>
+                    <option value="APPROVAL_REQUESTED">Approval Requested</option>
+                    <option value="APPROVAL_GRANTED">Approval Granted</option>
+                    <option value="APPROVAL_DENIED">Approval Denied</option>
+                    <option value="ESCALATION">Escalation</option>
+                    <option value="RESOLUTION_RECORDED">Resolution Recorded</option>
+                    <option value="PLAYBOOK_GENERATED">Playbook Generated</option>
+                </select>
+                <button class="btn btn-secondary" onclick="refreshAuditLog()">↻ Refresh</button>
+            </div>
+            <div class="card">
+                <div class="table-wrap"><table><thead><tr><th>Timestamp</th><th>Actor</th><th>Action</th><th>Target</th><th>Success</th><th>Details</th></tr></thead><tbody id="audit-table"><tr><td colspan="6" class="empty-state">Loading...</td></tr></tbody></table></div>
             </div>
         </div>
 
@@ -654,7 +712,34 @@ function sendWsRpc(method, params) {
 function handleBroadcast(msg) {
     if (msg.method === 'monitor.health_update' || msg.method === 'monitor.service_recovered') refreshDashboard();
     if (msg.method === 'incident.created' || msg.method === 'alert.triggered') { refreshDashboard(); refreshIncidents(); }
-    if (msg.method === 'playbook.completed') addEvent(msg.method, `Playbook finished: ${msg.params?.status}`);
+    if (msg.method === 'incident.escalated') { refreshIncidents(); }
+    if (msg.method === 'playbook.completed') { addEvent(msg.method, `Playbook finished: ${msg.params?.status}`); }
+    if (msg.method === 'approval.requested') {
+        refreshApprovals();
+        // Notify in chat that approval is needed
+        const p = msg.params || {};
+        appendChat('system', `Approval required for tool <strong>${p.tool_name || '?'}</strong>. Go to the Approvals page to approve or deny.`);
+    }
+    if (msg.method === 'approval.responded') {
+        refreshApprovals();
+        const p = msg.params || {};
+        if (p.approved) {
+            appendChat('system', `Tool <strong>${p.tool_name || '?'}</strong> approved by ${p.responded_by || 'user'}. Agent is auto-resuming...`);
+        } else {
+            appendChat('system', `Tool <strong>${p.tool_name || '?'}</strong> denied by ${p.responded_by || 'user'}.`);
+        }
+    }
+    if (msg.method === 'agent.response') {
+        const p = msg.params || {};
+        if (p.response) {
+            // Remove any lingering "Thinking..." indicator
+            const thinkingEl = document.getElementById('chat-thinking');
+            if (thinkingEl) thinkingEl.remove();
+            let text = p.response;
+            if (p.tools_used && p.tools_used.length > 0) text += `\n\n🔧 Tools used: ${p.tools_used.join(', ')}`;
+            appendChat('assistant', formatResponse(text));
+        }
+    }
 }
 
 // ─── Event Log ───
@@ -834,17 +919,28 @@ async function deleteService(id) {
 async function refreshIncidents() {
     const incidents = await api('/api/incidents');
     const tbody = document.getElementById('incidents-table');
-    if (!incidents || incidents.length === 0) { tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No incidents yet.</td></tr>'; return; }
-    tbody.innerHTML = incidents.map(i => `<tr>
+    if (!incidents || incidents.length === 0) { tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No incidents yet.</td></tr>'; return; }
+    tbody.innerHTML = incidents.map(i => {
+        const isActive = i.status !== 'RESOLVED' && i.status !== 'CLOSED';
+        const escalationDisplay = i.escalationCount > 0
+            ? `<span style="color:var(--orange);font-weight:600">Tier ${i.escalationCount}</span>`
+            : '<span style="color:var(--text-dim)">-</span>';
+        const ackLabel = i.acknowledgedAt ? `<span style="color:var(--green);font-size:11px">ACK'd</span>` : '';
+        return `<tr>
         <td><span class="badge-status badge-${i.severity?.toLowerCase()}">${i.severity}</span></td>
         <td><strong>${i.title}</strong><br><span style="font-size:11px;color:var(--text-dim)">${(i.description || '').substring(0, 80)}</span></td>
         <td>${i.service || '-'}</td>
-        <td><span class="badge-status badge-${i.status?.toLowerCase()}">${i.status}</span></td>
+        <td><span class="badge-status badge-${i.status?.toLowerCase()}">${i.status}</span> ${ackLabel}</td>
+        <td>${escalationDisplay}</td>
         <td style="font-size:12px;color:var(--text-dim)">${new Date(i.createdAt).toLocaleString()}</td>
         <td>
-            ${i.status !== 'RESOLVED' && i.status !== 'CLOSED' ? `<button class="btn btn-sm btn-secondary" onclick="resolveIncident('${i.id}')">Resolve</button>` : ''}
+            <div class="btn-group" style="flex-wrap:nowrap;">
+                ${isActive && !i.acknowledgedAt ? `<button class="btn btn-sm btn-secondary" onclick="acknowledgeIncident('${i.id}')">Acknowledge</button>` : ''}
+                ${isActive ? `<button class="btn btn-sm btn-secondary" onclick="resolveIncident('${i.id}')">Resolve</button>` : ''}
+            </div>
         </td>
-    </tr>`).join('');
+    </tr>`;
+    }).join('');
 }
 async function createIncident() {
     const body = {
@@ -905,18 +1001,41 @@ async function deleteAlert(id) {
 
 // ─── Tools ───
 async function loadTools() {
-    const tools = await api('/api/agent/tools');
+    const tools = await api('/api/agent/tools/detailed');
     const grid = document.getElementById('tools-grid');
-    if (!tools || Object.keys(tools).length === 0) { grid.innerHTML = '<div class="empty-state">No tools available</div>'; return; }
-    grid.innerHTML = Object.entries(tools).map(([name, desc]) => {
-        const [cat, ...rest] = desc.split(' - ');
-        const catIcon = { monitoring: '📡', infrastructure: '🏗️', remediation: '🔧', diagnostics: '🔍', incident: '🚨', alerting: '🔔' }[cat.trim()] || '⚙️';
+    if (!tools || tools.length === 0) { grid.innerHTML = '<div class="empty-state">No tools available</div>'; return; }
+    const catIcon = { monitoring: '📡', infrastructure: '🏗️', remediation: '🔧', diagnostics: '🔍', incident: '🚨', alerting: '🔔' };
+    grid.innerHTML = tools.map(t => {
+        const icon = catIcon[t.category] || '⚙️';
+        const approvalBadge = t.requiresApproval
+            ? '<span style="background:var(--yellow-bg);color:var(--yellow);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;margin-left:6px;">APPROVAL</span>'
+            : '';
+        const toggleChecked = t.requiresApproval ? 'checked' : '';
         return `<div class="tool-card">
-            <h4>${catIcon} ${name}</h4>
-            <p>${rest.join(' - ')}</p>
-            <span class="tag">${cat.trim()}</span>
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+                <h4>${icon} ${t.name}${approvalBadge}</h4>
+            </div>
+            <p>${t.description}</p>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;">
+                <span class="tag">${t.category}</span>
+                <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-dim);cursor:pointer;" title="Toggle whether this tool requires human approval">
+                    <span>Approval required</span>
+                    <input type="checkbox" ${toggleChecked} onchange="toggleToolApproval('${t.name}', this.checked)"
+                        style="width:16px;height:16px;accent-color:var(--yellow);cursor:pointer;">
+                </label>
+            </div>
         </div>`;
     }).join('');
+}
+async function toggleToolApproval(toolName, requiresApproval) {
+    const res = await api(`/api/agent/tools/${toolName}/approval`, {
+        method: 'PATCH',
+        body: JSON.stringify({ requiresApproval })
+    });
+    if (res) {
+        const status = requiresApproval ? 'now requires' : 'no longer requires';
+        addEvent('tool.approval_changed', `${toolName} ${status} approval`);
+    }
 }
 
 // ─── Playbooks ───
@@ -962,18 +1081,33 @@ async function sendChat() {
     if (!msg) return;
     input.value = '';
     appendChat('user', msg);
-    appendChat('assistant', '<div class="loading"></div> Thinking...');
+    const thinkingDiv = document.createElement('div');
+    thinkingDiv.className = 'chat-msg assistant';
+    thinkingDiv.id = 'chat-thinking';
+    thinkingDiv.innerHTML = '<div class="loading"></div> Thinking...';
+    document.getElementById('chat-messages').appendChild(thinkingDiv);
+    document.getElementById('chat-messages').scrollTop = document.getElementById('chat-messages').scrollHeight;
     const res = await api('/api/agent/chat', {
         method: 'POST',
         body: JSON.stringify({ message: msg })
     });
-    // Remove loading message
-    const msgs = document.getElementById('chat-messages');
-    msgs.lastChild.remove();
+    // Remove loading message by ID (reliable even if WebSocket messages were appended in between)
+    const thinkingEl = document.getElementById('chat-thinking');
+    if (thinkingEl) thinkingEl.remove();
     if (res && res.response) {
         let text = res.response;
         if (res.tools_used && res.tools_used.length > 0) text += `\n\n🔧 Tools used: ${res.tools_used.join(', ')}`;
         appendChat('assistant', formatResponse(text));
+
+        // If 3+ tools were used, offer to save as playbook
+        if (res.tools_used && res.tools_used.length >= 3 && res.session_id) {
+            const saveBtn = document.createElement('div');
+            saveBtn.className = 'chat-msg system';
+            saveBtn.innerHTML = `<strong>Auto-playbook suggestion:</strong> This resolution used ${res.tools_used.length} tools. ` +
+                `<button class="btn btn-sm btn-primary" style="margin-left:8px;" ` +
+                `onclick="saveAsPlaybook('${res.session_id}')">Save as Playbook</button>`;
+            document.getElementById('chat-messages').appendChild(saveBtn);
+        }
     } else {
         appendChat('assistant', 'Error: Could not get a response. Make sure OPENAI_API_KEY is set.');
     }
@@ -993,6 +1127,151 @@ function formatResponse(text) {
         .replace(/`([^`]+)`/g, '<code style="background:var(--bg);padding:2px 5px;border-radius:3px;font-size:12px">$1</code>')
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
         .replace(/\n/g, '<br>');
+}
+
+// ─── Save as Playbook (from chat) ───
+async function saveAsPlaybook(sessionId) {
+    const name = prompt('Playbook name:', 'auto-remediation-playbook');
+    if (!name) return;
+    const description = prompt('Description (optional):', '');
+    const res = await api('/api/playbooks/generate', {
+        method: 'POST',
+        body: JSON.stringify({ sessionId, name, description: description || null })
+    });
+    if (res && res.id) {
+        appendChat('system', `Playbook "${res.name}" saved with ${res.steps} steps! Find it in the Playbooks page.`);
+        loadPlaybooks();
+    } else {
+        appendChat('system', `Failed to save playbook: ${res?.error || 'unknown error'}`);
+    }
+}
+
+// ─── Acknowledge Incident ───
+async function acknowledgeIncident(id) {
+    await api(`/api/incidents/${id}/acknowledge`, { method: 'POST', body: '{}' });
+    refreshIncidents();
+    refreshDashboard();
+}
+
+// ─── Approvals ───
+async function refreshApprovals() {
+    const approvals = await api('/api/approvals/pending');
+    const badge = document.getElementById('approval-badge');
+    if (approvals && approvals.length > 0) {
+        badge.textContent = approvals.length;
+        badge.style.display = '';
+    } else {
+        badge.style.display = 'none';
+    }
+    const tbody = document.getElementById('approvals-table');
+    if (!approvals || approvals.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No pending approvals</td></tr>';
+        return;
+    }
+    tbody.innerHTML = approvals.map(a => {
+        let paramsDisplay = '-';
+        try { paramsDisplay = JSON.stringify(JSON.parse(a.parameters), null, 0).substring(0, 120); } catch(e) {}
+        return `<tr>
+            <td><strong>${a.toolName}</strong></td>
+            <td style="font-family:var(--mono);font-size:11px">${paramsDisplay}</td>
+            <td style="font-size:11px;color:var(--text-dim)">${a.sessionId || '-'}</td>
+            <td style="font-size:12px;color:var(--text-dim)">${new Date(a.requestedAt).toLocaleString()}</td>
+            <td><span class="badge-status badge-${a.status === 'PENDING' ? 'medium' : a.status === 'APPROVED' ? 'healthy' : 'unhealthy'}">${a.status}</span></td>
+            <td>
+                <div class="btn-group" style="flex-wrap:nowrap;">
+                    <button class="btn btn-sm btn-primary" onclick="respondApproval('${a.id}', true)">Approve</button>
+                    <button class="btn btn-sm btn-danger" onclick="respondApproval('${a.id}', false)">Deny</button>
+                </div>
+            </td>
+        </tr>`;
+    }).join('');
+}
+async function respondApproval(id, approved) {
+    await api(`/api/approvals/${id}/respond`, {
+        method: 'POST',
+        body: JSON.stringify({ approved: approved, respondedBy: 'ui-user' })
+    });
+    refreshApprovals();
+}
+
+// ─── Audit Log ───
+async function refreshAuditLog() {
+    const actor = document.getElementById('audit-actor-filter').value;
+    const action = document.getElementById('audit-action-filter').value;
+    let url = '/api/audit?limit=100';
+    if (actor) url += `&actor=${actor}`;
+    if (action) url += `&action=${action}`;
+    const logs = await api(url);
+    const tbody = document.getElementById('audit-table');
+    if (!logs || logs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No audit entries yet. Actions will appear here as the agent works.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = logs.map(l => {
+        let details = '-';
+        try { if (l.details) details = JSON.stringify(JSON.parse(l.details), null, 0).substring(0, 150); } catch(e) { details = l.details?.substring(0, 150) || '-'; }
+        return `<tr>
+            <td style="font-size:11px;color:var(--text-dim);white-space:nowrap">${new Date(l.timestamp).toLocaleString()}</td>
+            <td><span class="tag">${l.actor}</span></td>
+            <td><strong style="font-size:12px">${l.action}</strong></td>
+            <td style="font-size:12px;font-family:var(--mono)">${l.target || '-'}</td>
+            <td>${l.success ? '<span style="color:var(--green)">OK</span>' : '<span style="color:var(--red)">FAIL</span>'}</td>
+            <td style="font-size:11px;color:var(--text-dim);max-width:300px;overflow:hidden;text-overflow:ellipsis">${details}</td>
+        </tr>`;
+    }).join('');
+}
+
+// ─── Insights ───
+async function refreshInsights() {
+    const data = await api('/api/learning/insights');
+    const container = document.getElementById('insights-container');
+    if (!data || data.total_resolutions === 0) {
+        container.innerHTML = '<div style="color:var(--text-dim);padding:8px 0;">No resolution data yet. As the agent resolves incidents, patterns and success rates will appear here.</div>';
+        return;
+    }
+    let html = `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px;">
+        <div style="background:var(--bg-input);padding:14px;border-radius:var(--radius-sm);">
+            <div style="font-size:24px;font-weight:700;color:var(--text)">${data.total_resolutions}</div>
+            <div style="font-size:11px;color:var(--text-dim)">Total Resolutions</div>
+        </div>
+        <div style="background:var(--bg-input);padding:14px;border-radius:var(--radius-sm);">
+            <div style="font-size:24px;font-weight:700;color:var(--green)">${data.total_successful || 0}</div>
+            <div style="font-size:11px;color:var(--text-dim)">Successful</div>
+        </div>
+        <div style="background:var(--bg-input);padding:14px;border-radius:var(--radius-sm);">
+            <div style="font-size:24px;font-weight:700;color:var(--accent)">${(data.overall_success_rate || 0).toFixed(1)}%</div>
+            <div style="font-size:11px;color:var(--text-dim)">Success Rate</div>
+        </div>
+    </div>`;
+
+    if (data.service_stats && data.service_stats.length > 0) {
+        html += '<div style="margin-bottom:12px;"><strong style="font-size:12px;color:var(--text);">Per-Service Stats</strong></div>';
+        html += '<table style="font-size:12px;"><thead><tr><th>Service</th><th>Total</th><th>Successful</th><th>Rate</th><th>Avg Time</th></tr></thead><tbody>';
+        data.service_stats.forEach(s => {
+            html += `<tr>
+                <td><strong>${s.service}</strong></td>
+                <td>${s.total}</td>
+                <td>${s.successful}</td>
+                <td style="color:var(--green)">${(s.success_rate || 0).toFixed(1)}%</td>
+                <td style="color:var(--text-dim)">${s.avg_resolution_ms > 0 ? (s.avg_resolution_ms / 1000).toFixed(1) + 's' : '-'}</td>
+            </tr>`;
+        });
+        html += '</tbody></table>';
+    }
+
+    if (data.patterns && data.patterns.length > 0) {
+        html += '<div style="margin-top:16px;margin-bottom:8px;"><strong style="font-size:12px;color:var(--text);">Top Resolution Patterns</strong></div>';
+        data.patterns.forEach(p => {
+            try {
+                const tools = JSON.parse(p.sequence);
+                html += `<div style="padding:6px 0;border-bottom:1px solid var(--border);">
+                    <span style="color:var(--accent)">${tools.join(' → ')}</span>
+                    <span style="color:var(--text-dim);margin-left:8px;">(${p.count}x)</span>
+                </div>`;
+            } catch(e) {}
+        });
+    }
+    container.innerHTML = html;
 }
 
 // ─── RPC Commands ───
@@ -1032,8 +1311,13 @@ async function runSecurityAudit() {
 // ─── Init ───
 connectWs();
 refreshDashboard();
-setTimeout(() => { loadTools(); refreshServices(); refreshIncidents(); refreshAlerts(); loadPlaybooks(); }, 500);
+setTimeout(() => {
+    loadTools(); refreshServices(); refreshIncidents(); refreshAlerts();
+    loadPlaybooks(); refreshApprovals(); refreshAuditLog(); refreshInsights();
+}, 500);
 setInterval(refreshDashboard, 15000);
+setInterval(refreshApprovals, 30000);
+setInterval(refreshInsights, 60000);
 </script>
 </body>
 </html>

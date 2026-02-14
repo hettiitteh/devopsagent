@@ -123,6 +123,20 @@ public class IncidentController {
     }
 
     /**
+     * Acknowledge an incident (stops escalation).
+     */
+    @PostMapping("/{id}/acknowledge")
+    public ResponseEntity<Incident> acknowledgeIncident(@PathVariable String id) {
+        return incidentRepository.findById(id)
+                .map(incident -> {
+                    incident.setStatus(Incident.IncidentStatus.ACKNOWLEDGED);
+                    incident.setAcknowledgedAt(Instant.now());
+                    return ResponseEntity.ok(incidentRepository.save(incident));
+                })
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    /**
      * Search for similar incidents.
      */
     @GetMapping("/search")

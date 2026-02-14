@@ -80,6 +80,26 @@ public class ToolRegistry {
         return toolList;
     }
 
+    /**
+     * List all tools with detailed info (name, category, description,
+     * requiresApproval, isMutating).
+     */
+    public List<Map<String, Object>> listToolsDetailed(Set<String> approvalRequiredTools) {
+        return tools.values().stream()
+                .sorted(Comparator.comparing(AgentTool::getCategory).thenComparing(AgentTool::getName))
+                .map(tool -> {
+                    Map<String, Object> info = new LinkedHashMap<>();
+                    info.put("name", tool.getName());
+                    info.put("category", tool.getCategory());
+                    info.put("description", tool.getDescription());
+                    info.put("requiresApproval",
+                            approvalRequiredTools != null && approvalRequiredTools.contains(tool.getName()));
+                    info.put("isMutating", tool.isMutating());
+                    return info;
+                })
+                .collect(Collectors.toList());
+    }
+
     public int getToolCount() {
         return tools.size();
     }

@@ -4,6 +4,13 @@ server:
 spring:
   application:
     name: devops-agent
+  web:
+    resources:
+      cache:
+        period: 0
+        cachecontrol:
+          no-cache: true
+          no-store: true
   datasource:
     url: jdbc:h2:file:./data/devopsagent;DB_CLOSE_DELAY=-1
     driver-class-name: org.h2.Driver
@@ -74,10 +81,22 @@ devops-agent:
     auto-assign: true
     escalation-timeout-minutes: 15
     max-retries: 3
+    escalation-tiers:
+      - channel: slack
+        label: "On-call team"
+      - channel: pagerduty
+        label: "Engineering Manager"
+      - channel: pagerduty
+        label: "VP Engineering"
 
   # Tool policy (9-layer cascade like OpenClaw)
   tool-policy:
     default-profile: sre
+    # Tools requiring human approval before execution (toggleable at runtime via UI)
+    approval-required:
+      - ssh_exec
+      - service_restart
+      - playbook_run
     profiles:
       minimal:
         allowed-tools:
@@ -93,9 +112,11 @@ devops-agent:
           - docker_exec
           - ssh_exec
           - playbook_run
-          - incident_create
+          - incident_manage
           - alert_manage
           - service_restart
+          - network_diag
+          - system_info
       full:
         allowed-tools: ["*"]
 

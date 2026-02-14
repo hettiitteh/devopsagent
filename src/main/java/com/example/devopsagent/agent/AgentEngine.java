@@ -1,6 +1,9 @@
 package com.example.devopsagent.agent;
 
 import com.example.devopsagent.config.AgentProperties;
+import com.example.devopsagent.service.AuditService;
+import com.example.devopsagent.service.ApprovalService;
+import com.example.devopsagent.service.LearningService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -38,12 +41,16 @@ public class AgentEngine {
     private final SystemPromptBuilder systemPromptBuilder;
     private final AgentProperties properties;
     private final ObjectMapper objectMapper;
+    private final AuditService auditService;
+    private final ApprovalService approvalService;
+    private final LearningService learningService;
 
     private static final int MAX_ITERATIONS = 25;
     private static final int MAX_CONVERSATION_TOKENS = 128000;
 
-    // Active agent sessions
+    // Active agent sessions and their tool contexts
     private final Map<String, AgentSession> activeSessions = new ConcurrentHashMap<>();
+    private final Map<String, ToolContext> sessionToolContexts = new ConcurrentHashMap<>();
 
     /**
      * Run the agent with a user message, executing the full agentic loop.
@@ -73,104 +80,43 @@ public class AgentEngine {
                 session.getMessages().add(AgentMessage.system(systemPrompt));
             }
 
-            // Add user message
-            session.getMessages().add(AgentMessage.user(userMessage));
+            // Add user message (null when resuming after approval)
+            if (userMessage != null) {
+                session.getMessages().add(AgentMessage.user(userMessage));
+            }
 
-            // Step 2: Create tool context
-            ToolContext toolContext = ToolContext.builder()
-                    .sessionId(sessionId)
-                    .toolProfile(toolProfile)
-                    .allowedTools(allowedToolNames)
-                    .dryRun(false)
-                    .build();
+            // Step 2: Create or reuse tool context (preserves approved tools across calls)
+            ToolContext toolContext = sessionToolContexts.computeIfAbsent(sessionId, id ->
+                    ToolContext.builder()
+                            .sessionId(id)
+                            .toolProfile(toolProfile)
+                            .allowedTools(allowedToolNames)
+                            .dryRun(false)
+                            .approvedTools(new java.util.HashSet<>())
+                            .build());
+            // Update allowed tools in case profile changed
+            toolContext.setAllowedTools(allowedToolNames);
 
-            // Step 3: Enter the agentic loop
-            StringBuilder fullResponse = new StringBuilder();
-            List<String> toolsUsed = new ArrayList<>();
-            int iterations = 0;
+            // Step 3: Run the agentic loop
+            CompletableFuture<AgentResponse> loopResult = runLoop(sessionId, session, toolContext, availableTools, context);
 
-            while (iterations < MAX_ITERATIONS) {
-                iterations++;
-                log.debug("Agent loop iteration {} for session {}", iterations, sessionId);
-
-                // Send to LLM
-                AgentMessage response = llmClient.chat(session.getMessages(), availableTools);
-                session.getMessages().add(response);
-
-                // If no tool calls, we're done
-                if (response.getToolCalls() == null || response.getToolCalls().isEmpty()) {
-                    if (response.getContent() != null) {
-                        fullResponse.append(response.getContent());
-                    }
-                    break;
-                }
-
-                // Collect any text content before tool calls
-                if (response.getContent() != null) {
-                    fullResponse.append(response.getContent()).append("\n");
-                }
-
-                // Execute tool calls
-                for (AgentMessage.ToolCall toolCall : response.getToolCalls()) {
-                    log.info("Executing tool: {} (id: {})", toolCall.getName(), toolCall.getId());
-
-                    // Policy check
-                    if (!toolPolicy.isToolAllowed(toolCall.getName(), toolContext)) {
-                        String denied = String.format("Tool '%s' is not allowed by the current policy.", toolCall.getName());
-                        session.getMessages().add(AgentMessage.toolResult(toolCall.getId(), denied));
-                        continue;
-                    }
-
-                    // Find and execute the tool
-                    Optional<AgentTool> tool = toolRegistry.getTool(toolCall.getName());
-                    if (tool.isEmpty()) {
-                        String notFound = String.format("Tool '%s' not found.", toolCall.getName());
-                        session.getMessages().add(AgentMessage.toolResult(toolCall.getId(), notFound));
-                        continue;
-                    }
-
-                    // Check approval requirement
-                    if (tool.get().requiresApproval() && !toolContext.isApprovalGranted()) {
-                        String needsApproval = String.format("Tool '%s' requires approval. Awaiting human confirmation.", toolCall.getName());
-                        session.getMessages().add(AgentMessage.toolResult(toolCall.getId(), needsApproval));
-                        continue;
-                    }
-
+            // Record resolution for learning after loop completes
+            final String msg = userMessage;
+            return loopResult.thenApply(agentResponse -> {
+                if (agentResponse.getToolsUsed() != null && !agentResponse.getToolsUsed().isEmpty()) {
                     try {
-                        ToolResult result = tool.get().execute(toolCall.getArguments(), toolContext);
-                        toolsUsed.add(toolCall.getName());
-                        String resultText = result.getTextContent();
-                        session.getMessages().add(AgentMessage.toolResult(toolCall.getId(), resultText));
-                        log.debug("Tool {} result: {}", toolCall.getName(), truncate(resultText, 200));
+                        long durationMs = Instant.now().toEpochMilli() - session.getStartedAt().toEpochMilli();
+                        String service = context != null && context.getAdditionalContext() != null
+                                ? context.getAdditionalContext() : "unknown";
+                        learningService.recordResolution(
+                                context != null ? context.getCurrentIncidentId() : null,
+                                service, msg, agentResponse.getToolsUsed(), true, durationMs);
                     } catch (Exception e) {
-                        log.error("Tool {} execution failed: {}", toolCall.getName(), e.getMessage());
-                        session.getMessages().add(AgentMessage.toolResult(toolCall.getId(),
-                                "Error executing tool: " + e.getMessage()));
+                        log.warn("Failed to record resolution for learning: {}", e.getMessage());
                     }
                 }
-
-                // Context window management: compact if too long
-                if (estimateTokens(session.getMessages()) > MAX_CONVERSATION_TOKENS * 0.8) {
-                    compactConversation(session);
-                }
-            }
-
-            if (iterations >= MAX_ITERATIONS) {
-                fullResponse.append("\n[Agent reached maximum iterations. Some analysis may be incomplete.]");
-            }
-
-            AgentResponse agentResponse = AgentResponse.builder()
-                    .sessionId(sessionId)
-                    .response(fullResponse.toString())
-                    .toolsUsed(toolsUsed)
-                    .iterations(iterations)
-                    .timestamp(Instant.now())
-                    .build();
-
-            log.info("Agent session {} completed: {} iterations, {} tools used",
-                    sessionId, iterations, toolsUsed.size());
-
-            return CompletableFuture.completedFuture(agentResponse);
+                return agentResponse;
+            });
 
         } catch (Exception e) {
             log.error("Agent session {} failed: {}", sessionId, e.getMessage(), e);
@@ -189,7 +135,176 @@ public class AgentEngine {
      */
     public void abort(String sessionId) {
         activeSessions.remove(sessionId);
+        sessionToolContexts.remove(sessionId);
         log.info("Agent session {} aborted", sessionId);
+    }
+
+    /**
+     * Resume the agent loop after an approval has been granted.
+     * Marks the tool as approved for this session and re-runs the agent
+     * with a system notification so the LLM knows it can proceed.
+     */
+    @Async("agentExecutor")
+    public CompletableFuture<AgentResponse> resumeAfterApproval(String sessionId, String toolName) {
+        log.info("Resuming session {} after approval of tool '{}'", sessionId, toolName);
+
+        // Mark the tool as approved in this session's context
+        ToolContext toolContext = sessionToolContexts.get(sessionId);
+        if (toolContext != null) {
+            toolContext.getApprovedTools().add(toolName);
+        }
+
+        AgentSession session = activeSessions.get(sessionId);
+        if (session == null) {
+            log.warn("Cannot resume session {} — session not found. It may have expired.", sessionId);
+            return CompletableFuture.completedFuture(
+                    AgentResponse.builder()
+                            .sessionId(sessionId)
+                            .response("Session expired. Please re-ask your question — the tool is now pre-approved.")
+                            .toolsUsed(List.of())
+                            .iterations(0)
+                            .timestamp(Instant.now())
+                            .build());
+        }
+
+        // Inject a system message telling the LLM the tool has been approved
+        session.getMessages().add(AgentMessage.user(
+                String.format("The tool '%s' has been approved by a human operator. " +
+                              "Please proceed with executing it to complete the task.", toolName)));
+
+        // Re-build context
+        SystemPromptBuilder.AgentContext context = SystemPromptBuilder.AgentContext.builder().build();
+
+        // Re-run the agentic loop (reuses the existing conversation history)
+        return run(sessionId, null, context);
+    }
+
+    /**
+     * Internal: run the agent loop. If userMessage is null, the conversation
+     * already has the latest message and we just need to continue the loop.
+     */
+    private CompletableFuture<AgentResponse> runLoop(String sessionId, AgentSession session,
+                                                      ToolContext toolContext,
+                                                      List<AgentTool> availableTools,
+                                                      SystemPromptBuilder.AgentContext context) {
+        StringBuilder fullResponse = new StringBuilder();
+        List<String> toolsUsed = new ArrayList<>();
+        int iterations = 0;
+
+        try {
+            while (iterations < MAX_ITERATIONS) {
+                iterations++;
+                log.debug("Agent loop iteration {} for session {}", iterations, sessionId);
+
+                AgentMessage response = llmClient.chat(session.getMessages(), availableTools);
+                session.getMessages().add(response);
+
+                if (response.getToolCalls() == null || response.getToolCalls().isEmpty()) {
+                    if (response.getContent() != null) {
+                        fullResponse.append(response.getContent());
+                    }
+                    break;
+                }
+
+                if (response.getContent() != null) {
+                    fullResponse.append(response.getContent()).append("\n");
+                }
+
+                boolean waitingForApproval = false;
+                for (AgentMessage.ToolCall toolCall : response.getToolCalls()) {
+                    log.info("Executing tool: {} (id: {})", toolCall.getName(), toolCall.getId());
+
+                    if (!toolPolicy.isToolAllowed(toolCall.getName(), toolContext)) {
+                        String denied = String.format("Tool '%s' is not allowed by the current policy.", toolCall.getName());
+                        session.getMessages().add(AgentMessage.toolResult(toolCall.getId(), denied));
+                        continue;
+                    }
+
+                    Optional<AgentTool> tool = toolRegistry.getTool(toolCall.getName());
+                    if (tool.isEmpty()) {
+                        String notFound = String.format("Tool '%s' not found.", toolCall.getName());
+                        session.getMessages().add(AgentMessage.toolResult(toolCall.getId(), notFound));
+                        continue;
+                    }
+
+                    // Check approval: config-driven list OR tool's own flag
+                    boolean toolNeedsApproval = properties.getToolPolicy().getApprovalRequired()
+                            .contains(toolCall.getName()) || tool.get().requiresApproval();
+                    if (toolNeedsApproval && !toolContext.isToolApproved(toolCall.getName())) {
+                        try {
+                            approvalService.requestApproval(
+                                    toolCall.getName(), toolCall.getArguments(), sessionId, null);
+                        } catch (Exception e) {
+                            log.warn("Failed to create approval request: {}", e.getMessage());
+                        }
+                        String approvalMsg = String.format(
+                                "Tool '%s' requires human approval. An approval request has been created " +
+                                "and is visible on the Pending Approvals page. The agent will automatically " +
+                                "resume once approved.",
+                                toolCall.getName());
+                        session.getMessages().add(AgentMessage.toolResult(toolCall.getId(), approvalMsg));
+                        waitingForApproval = true;
+                        continue;
+                    }
+
+                    try {
+                        ToolResult result = tool.get().execute(toolCall.getArguments(), toolContext);
+                        toolsUsed.add(toolCall.getName());
+                        String resultText = result.getTextContent();
+                        session.getMessages().add(AgentMessage.toolResult(toolCall.getId(), resultText));
+                        log.debug("Tool {} result: {}", toolCall.getName(), truncate(resultText, 200));
+
+                        auditService.log("agent", "TOOL_EXECUTED", toolCall.getName(),
+                                Map.of("arguments", toolCall.getArguments() != null ? toolCall.getArguments() : Map.of(),
+                                       "success", result.isSuccess()),
+                                sessionId, result.isSuccess());
+                    } catch (Exception e) {
+                        log.error("Tool {} execution failed: {}", toolCall.getName(), e.getMessage());
+                        session.getMessages().add(AgentMessage.toolResult(toolCall.getId(),
+                                "Error executing tool: " + e.getMessage()));
+                        auditService.log("agent", "TOOL_EXECUTED", toolCall.getName(),
+                                Map.of("error", e.getMessage()), sessionId, false);
+                    }
+                }
+
+                // If we're waiting for an approval, stop the loop — it will resume later
+                if (waitingForApproval) {
+                    fullResponse.append("\n[Waiting for human approval to continue...]");
+                    break;
+                }
+
+                if (estimateTokens(session.getMessages()) > MAX_CONVERSATION_TOKENS * 0.8) {
+                    compactConversation(session);
+                }
+            }
+
+            if (iterations >= MAX_ITERATIONS) {
+                fullResponse.append("\n[Agent reached maximum iterations. Some analysis may be incomplete.]");
+            }
+
+            AgentResponse agentResponse = AgentResponse.builder()
+                    .sessionId(sessionId)
+                    .response(fullResponse.toString())
+                    .toolsUsed(toolsUsed)
+                    .iterations(iterations)
+                    .timestamp(Instant.now())
+                    .build();
+
+            log.info("Agent session {} loop completed: {} iterations, {} tools used",
+                    sessionId, iterations, toolsUsed.size());
+
+            return CompletableFuture.completedFuture(agentResponse);
+
+        } catch (Exception e) {
+            log.error("Agent session {} loop failed: {}", sessionId, e.getMessage(), e);
+            return CompletableFuture.completedFuture(
+                    AgentResponse.builder()
+                            .sessionId(sessionId)
+                            .response("Agent error: " + e.getMessage())
+                            .error(e.getMessage())
+                            .timestamp(Instant.now())
+                            .build());
+        }
     }
 
     /**

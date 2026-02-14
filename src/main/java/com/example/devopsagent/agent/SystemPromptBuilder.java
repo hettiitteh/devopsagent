@@ -1,6 +1,7 @@
 package com.example.devopsagent.agent;
 
 import com.example.devopsagent.config.AgentProperties;
+import com.example.devopsagent.service.LearningService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -31,6 +32,7 @@ import java.util.List;
 public class SystemPromptBuilder {
 
     private final AgentProperties properties;
+    private final LearningService learningService;
 
     /**
      * Build the full system prompt for the SRE agent.
@@ -63,6 +65,11 @@ public class SystemPromptBuilder {
 
         // Section 8: Playbook Guidelines
         prompt.append(buildPlaybookSection());
+
+        // Section 8.5: Recommended Approaches from Learning
+        if (context != null && context.getAdditionalContext() != null) {
+            prompt.append(buildRecommendedApproachesSection(context.getAdditionalContext()));
+        }
 
         // Section 9: Time
         prompt.append(buildTimeSection());
@@ -207,6 +214,22 @@ public class SystemPromptBuilder {
                 7. Update the incident with the playbook results
 
                 """;
+    }
+
+    private String buildRecommendedApproachesSection(String serviceContext) {
+        try {
+            String recommendation = learningService.getRecommendedApproach(serviceContext);
+            if (recommendation == null || recommendation.isEmpty()) return "";
+            double successRate = learningService.getSuccessRate(serviceContext);
+            return String.format("""
+                    # Recommended Approaches (from past resolutions)
+                    %s
+                    Success rate for this service: %.1f%%
+
+                    """, recommendation, successRate);
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     private String buildTimeSection() {

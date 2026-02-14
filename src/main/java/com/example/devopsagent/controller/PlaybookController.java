@@ -4,6 +4,7 @@ import com.example.devopsagent.domain.PlaybookExecution;
 import com.example.devopsagent.playbook.Playbook;
 import com.example.devopsagent.playbook.PlaybookEngine;
 import com.example.devopsagent.repository.PlaybookExecutionRepository;
+import com.example.devopsagent.service.PlaybookGeneratorService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -21,6 +22,7 @@ public class PlaybookController {
 
     private final PlaybookEngine playbookEngine;
     private final PlaybookExecutionRepository executionRepository;
+    private final PlaybookGeneratorService playbookGeneratorService;
 
     /**
      * List all available playbooks.
@@ -74,6 +76,32 @@ public class PlaybookController {
             executions = executionRepository.findAll();
         }
         return ResponseEntity.ok(executions);
+    }
+
+    /**
+     * Generate a playbook from an agent session's tool sequence.
+     */
+    @PostMapping("/generate")
+    public ResponseEntity<Map<String, Object>> generatePlaybook(@RequestBody Map<String, String> body) {
+        String sessionId = body.get("sessionId");
+        String name = body.getOrDefault("name", "auto-generated-playbook");
+        String description = body.get("description");
+
+        if (sessionId == null || sessionId.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "sessionId is required"));
+        }
+
+        try {
+            Playbook generated = playbookGeneratorService.generateAndSave(sessionId, name, description);
+            return ResponseEntity.ok(Map.of(
+                    "id", generated.getId(),
+                    "name", generated.getName(),
+                    "steps", generated.getSteps().size(),
+                    "message", "Playbook generated and saved successfully"
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
     }
 
     /**

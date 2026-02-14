@@ -8,6 +8,7 @@ import com.example.devopsagent.config.AgentProperties;
 import com.example.devopsagent.domain.PlaybookExecution;
 import com.example.devopsagent.gateway.GatewayWebSocketHandler;
 import com.example.devopsagent.repository.PlaybookExecutionRepository;
+import com.example.devopsagent.service.AuditService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import lombok.RequiredArgsConstructor;
@@ -42,6 +43,7 @@ public class PlaybookEngine {
     private final PlaybookExecutionRepository executionRepository;
     private final AgentProperties properties;
     private final GatewayWebSocketHandler gatewayHandler;
+    private final AuditService auditService;
 
     private final Map<String, Playbook> playbooks = new ConcurrentHashMap<>();
     private final Map<String, PlaybookExecution> runningExecutions = new ConcurrentHashMap<>();
@@ -121,6 +123,11 @@ public class PlaybookEngine {
         log.info("{}Executing playbook: {} ({} steps)",
                 dryRun ? "[DRY RUN] " : "", playbook.getName(), playbook.getSteps().size());
 
+        // Audit: playbook started
+        auditService.log("playbook-engine", "PLAYBOOK_RUN", playbookId,
+                Map.of("name", playbook.getName(), "steps", playbook.getSteps().size(),
+                       "dry_run", dryRun, "incident_id", incidentId != null ? incidentId : ""));
+
         StringBuilder output = new StringBuilder();
         output.append(dryRun ? "=== DRY RUN ===" : "=== EXECUTING ===").append("\n");
         output.append("Playbook: ").append(playbook.getName()).append("\n");
@@ -159,6 +166,11 @@ public class PlaybookEngine {
             // Execute the step
             ToolResult stepResult = executeStep(step, toolContext, parameters);
             output.append("  Result: ").append(stepResult.getTextContent()).append("\n\n");
+
+            // Audit: step completed
+            auditService.log("playbook-engine", "PLAYBOOK_STEP", playbookId,
+                    Map.of("step", step.getOrder(), "step_name", step.getName(),
+                           "tool", step.getTool(), "success", stepResult.isSuccess()));
 
             if (!stepResult.isSuccess()) {
                 String onFailure = step.getOnFailure() != null ? step.getOnFailure() : "abort";
@@ -209,6 +221,12 @@ public class PlaybookEngine {
                 "status", execution.getStatus().name(),
                 "duration_ms", execution.getExecutionTimeMs()
         ));
+
+        // Audit: playbook completed
+        auditService.log("playbook-engine", "PLAYBOOK_COMPLETED", playbookId,
+                Map.of("name", playbook.getName(), "status", execution.getStatus().name(),
+                       "duration_ms", execution.getExecutionTimeMs()),
+                null, success);
 
         return ToolResult.text(output.toString());
     }

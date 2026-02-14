@@ -69,12 +69,21 @@ public class AgentProperties {
         private boolean autoAssign = true;
         private int escalationTimeoutMinutes = 15;
         private int maxRetries = 3;
+        private List<EscalationTier> escalationTiers = new ArrayList<>();
+
+        @Data
+        public static class EscalationTier {
+            private String channel = "slack";
+            private String label = "On-call team";
+        }
     }
 
     @Data
     public static class ToolPolicyConfig {
         private String defaultProfile = "sre";
         private Map<String, ToolProfile> profiles = new HashMap<>();
+        /** Tools that require human approval before execution (runtime-toggleable) */
+        private List<String> approvalRequired = new ArrayList<>();
 
         @Data
         public static class ToolProfile {

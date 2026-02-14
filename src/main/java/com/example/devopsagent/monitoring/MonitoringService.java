@@ -7,6 +7,7 @@ import com.example.devopsagent.gateway.GatewayWebSocketHandler;
 import com.example.devopsagent.playbook.PlaybookEngine;
 import com.example.devopsagent.repository.IncidentRepository;
 import com.example.devopsagent.repository.MonitoredServiceRepository;
+import com.example.devopsagent.service.AuditService;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -47,6 +48,7 @@ public class MonitoringService {
     private final GatewayWebSocketHandler gatewayHandler;
     private final MeterRegistry meterRegistry;
     private final PlaybookEngine playbookEngine;
+    private final AuditService auditService;
 
     // Health check history for anomaly detection
     private final Map<String, List<HealthCheckResult>> healthHistory = new ConcurrentHashMap<>();
@@ -267,6 +269,11 @@ public class MonitoringService {
             incidentId = incident.getId();
             log.info("Auto-created incident {} for unhealthy service: {}", incidentId, service.getName());
 
+            // Audit: incident created
+            auditService.log("monitoring", "INCIDENT_CREATED", incidentId,
+                    Map.of("service", service.getName(), "severity", "HIGH",
+                           "message", result.message()));
+
             // Broadcast incident via gateway
             gatewayHandler.broadcast("incident.created", Map.of(
                     "incident_id", incident.getId(),
@@ -301,6 +308,10 @@ public class MonitoringService {
                 incident.setResolution("Service recovered automatically.");
                 incidentRepository.save(incident);
                 log.info("Auto-resolved incident {} for recovered service {}", incident.getId(), service.getName());
+
+                // Audit: incident resolved
+                auditService.log("monitoring", "INCIDENT_RESOLVED", incident.getId(),
+                        Map.of("service", service.getName(), "resolution", "auto-recovery"));
             }
         }
 

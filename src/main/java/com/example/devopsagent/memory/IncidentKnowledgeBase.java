@@ -2,8 +2,10 @@ package com.example.devopsagent.memory;
 
 import com.example.devopsagent.domain.Incident;
 import com.example.devopsagent.repository.IncidentRepository;
+import com.example.devopsagent.service.LearningService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -25,10 +27,16 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class IncidentKnowledgeBase {
 
     private final IncidentRepository incidentRepository;
+    private final LearningService learningService;
+
+    public IncidentKnowledgeBase(IncidentRepository incidentRepository,
+                                  @Lazy LearningService learningService) {
+        this.incidentRepository = incidentRepository;
+        this.learningService = learningService;
+    }
 
     /**
      * Search for similar past incidents based on keywords.
@@ -131,6 +139,20 @@ public class IncidentKnowledgeBase {
         if (rootCauses != null && !rootCauses.isEmpty()) {
             context.append("\nCommon root causes:\n");
             rootCauses.forEach(rc -> context.append("- ").append(rc).append("\n"));
+        }
+
+        // Add learning data if available
+        try {
+            String recommendation = learningService.getRecommendedApproach(service);
+            if (recommendation != null) {
+                context.append("\n").append(recommendation).append("\n");
+            }
+            double successRate = learningService.getSuccessRate(service);
+            if (successRate > 0) {
+                context.append(String.format("Auto-resolution success rate: %.1f%%\n", successRate));
+            }
+        } catch (Exception e) {
+            // Learning service may not have data yet
         }
 
         return context.toString();
