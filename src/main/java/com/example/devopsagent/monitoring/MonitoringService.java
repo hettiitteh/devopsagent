@@ -8,6 +8,7 @@ import com.example.devopsagent.playbook.PlaybookEngine;
 import com.example.devopsagent.repository.IncidentRepository;
 import com.example.devopsagent.repository.MonitoredServiceRepository;
 import com.example.devopsagent.service.AuditService;
+import com.example.devopsagent.service.LearningService;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -49,6 +50,7 @@ public class MonitoringService {
     private final MeterRegistry meterRegistry;
     private final PlaybookEngine playbookEngine;
     private final AuditService auditService;
+    private final LearningService learningService;
 
     // Health check history for anomaly detection
     private final Map<String, List<HealthCheckResult>> healthHistory = new ConcurrentHashMap<>();
@@ -312,6 +314,21 @@ public class MonitoringService {
                 // Audit: incident resolved
                 auditService.log("monitoring", "INCIDENT_RESOLVED", incident.getId(),
                         Map.of("service", service.getName(), "resolution", "auto-recovery"));
+
+                // Record resolution for learning — monitoring auto-recovery cycle
+                try {
+                    long resolutionTimeMs = incident.getCreatedAt() != null
+                            ? Instant.now().toEpochMilli() - incident.getCreatedAt().toEpochMilli() : 0;
+                    learningService.recordResolution(
+                            incident.getId(),
+                            service.getName(),
+                            incident.getTitle(),
+                            List.of("monitoring:health_check", "monitoring:auto_recovery"),
+                            true,
+                            resolutionTimeMs);
+                } catch (Exception e) {
+                    log.warn("Failed to record auto-recovery for learning: {}", e.getMessage());
+                }
             }
         }
 

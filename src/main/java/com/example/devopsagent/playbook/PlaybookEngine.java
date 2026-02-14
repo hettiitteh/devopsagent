@@ -9,6 +9,7 @@ import com.example.devopsagent.domain.PlaybookExecution;
 import com.example.devopsagent.gateway.GatewayWebSocketHandler;
 import com.example.devopsagent.repository.PlaybookExecutionRepository;
 import com.example.devopsagent.service.AuditService;
+import com.example.devopsagent.service.LearningService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import lombok.RequiredArgsConstructor;
@@ -44,6 +45,7 @@ public class PlaybookEngine {
     private final AgentProperties properties;
     private final GatewayWebSocketHandler gatewayHandler;
     private final AuditService auditService;
+    private final LearningService learningService;
 
     private final Map<String, Playbook> playbooks = new ConcurrentHashMap<>();
     private final Map<String, PlaybookExecution> runningExecutions = new ConcurrentHashMap<>();
@@ -143,6 +145,7 @@ public class PlaybookEngine {
                 .build();
 
         boolean success = true;
+        List<String> toolsExecuted = new ArrayList<>();
         for (Playbook.Step step : playbook.getSteps()) {
             execution.setCurrentStep(step.getOrder());
             executionRepository.save(execution);
@@ -165,6 +168,7 @@ public class PlaybookEngine {
 
             // Execute the step
             ToolResult stepResult = executeStep(step, toolContext, parameters);
+            toolsExecuted.add(step.getTool());
             output.append("  Result: ").append(stepResult.getTextContent()).append("\n\n");
 
             // Audit: step completed
@@ -227,6 +231,29 @@ public class PlaybookEngine {
                 Map.of("name", playbook.getName(), "status", execution.getStatus().name(),
                        "duration_ms", execution.getExecutionTimeMs()),
                 null, success);
+
+        // Record resolution for learning — captures the playbook's tool sequence
+        if (!dryRun && !toolsExecuted.isEmpty()) {
+            try {
+                // Determine service name from parameters or playbook metadata
+                String serviceName = parameters != null && parameters.get("service_name") != null
+                        ? parameters.get("service_name").toString() : playbookId;
+
+                // Prefix with "playbook:" to distinguish from chat-driven resolutions
+                List<String> labeledTools = new ArrayList<>();
+                labeledTools.add("playbook:" + playbookId);
+                labeledTools.addAll(toolsExecuted);
+                learningService.recordResolution(
+                        incidentId,
+                        serviceName,
+                        "Playbook: " + playbook.getName(),
+                        labeledTools,
+                        success,
+                        execution.getExecutionTimeMs());
+            } catch (Exception e) {
+                log.warn("Failed to record playbook resolution for learning: {}", e.getMessage());
+            }
+        }
 
         return ToolResult.text(output.toString());
     }
