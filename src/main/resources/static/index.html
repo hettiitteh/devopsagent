@@ -400,7 +400,7 @@
                 <button class="btn btn-secondary" onclick="refreshServices()">↻ Refresh</button>
             </div>
             <div class="card">
-                <div class="table-wrap"><table><thead><tr><th>Service</th><th>Type</th><th>Endpoint</th><th>Status</th><th>Failures</th><th>Last Check</th><th>Actions</th></tr></thead><tbody id="monitoring-services"><tr><td colspan="7" class="empty-state">Loading...</td></tr></tbody></table></div>
+                <div class="table-wrap"><table><thead><tr><th>Service</th><th>Type</th><th>Endpoint</th><th>Status</th><th>Enabled</th><th>Failures</th><th>Interval</th><th>Last Check</th><th>Actions</th></tr></thead><tbody id="monitoring-services"><tr><td colspan="9" class="empty-state">Loading...</td></tr></tbody></table></div>
             </div>
         </div>
 
@@ -499,10 +499,12 @@
         <div class="form-group"><label class="form-label">Service Name</label><input class="form-input" id="svc-name" placeholder="e.g. payment-service"></div>
         <div class="form-group"><label class="form-label">Display Name</label><input class="form-input" id="svc-display" placeholder="e.g. Payment Service"></div>
         <div class="form-row">
-            <div class="form-group"><label class="form-label">Type</label><select class="form-select" id="svc-type"><option>HTTP</option><option>TCP</option><option>KUBERNETES_DEPLOYMENT</option><option>DOCKER_CONTAINER</option></select></div>
+            <div class="form-group"><label class="form-label">Type</label><select class="form-select" id="svc-type"><option>HTTP</option><option>TCP</option><option>KUBERNETES_DEPLOYMENT</option><option>KUBERNETES_STATEFULSET</option><option>DOCKER_CONTAINER</option><option>PROCESS</option></select></div>
             <div class="form-group"><label class="form-label">Check Interval (sec)</label><input class="form-input" id="svc-interval" type="number" value="60"></div>
         </div>
         <div class="form-group"><label class="form-label">Health Endpoint</label><input class="form-input" id="svc-endpoint" placeholder="http://localhost:8080/actuator/health"></div>
+        <div class="form-group"><label class="form-label">Metrics Endpoint</label><input class="form-input" id="svc-metrics" placeholder="http://localhost:8080/actuator/prometheus"></div>
+        <div class="form-group"><label class="form-label">Log Source</label><input class="form-input" id="svc-logsource" placeholder="e.g. journalctl, kubectl, docker, /var/log/app.log"></div>
         <div class="form-row">
             <div class="form-group"><label class="form-label">Namespace</label><input class="form-input" id="svc-namespace" placeholder="default"></div>
             <div class="form-group"><label class="form-label">Cluster</label><input class="form-input" id="svc-cluster" placeholder="production"></div>
@@ -510,6 +512,34 @@
         <div class="btn-group" style="margin-top:16px;justify-content:flex-end;">
             <button class="btn btn-secondary" onclick="closeModal('add-service-modal')">Cancel</button>
             <button class="btn btn-primary" onclick="addService()">Register Service</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="edit-service-modal">
+    <div class="modal">
+        <h3>Edit Service Configuration</h3>
+        <input type="hidden" id="edit-svc-id">
+        <div class="form-group"><label class="form-label">Service Name</label><input class="form-input" id="edit-svc-name" placeholder="e.g. payment-service"></div>
+        <div class="form-group"><label class="form-label">Display Name</label><input class="form-input" id="edit-svc-display" placeholder="e.g. Payment Service"></div>
+        <div class="form-row">
+            <div class="form-group"><label class="form-label">Type</label><select class="form-select" id="edit-svc-type"><option>HTTP</option><option>TCP</option><option>KUBERNETES_DEPLOYMENT</option><option>KUBERNETES_STATEFULSET</option><option>DOCKER_CONTAINER</option><option>PROCESS</option></select></div>
+            <div class="form-group"><label class="form-label">Check Interval (sec)</label><input class="form-input" id="edit-svc-interval" type="number" value="60"></div>
+        </div>
+        <div class="form-group"><label class="form-label">Health Endpoint</label><input class="form-input" id="edit-svc-endpoint" placeholder="http://localhost:8080/actuator/health"></div>
+        <div class="form-group"><label class="form-label">Metrics Endpoint</label><input class="form-input" id="edit-svc-metrics" placeholder="http://localhost:8080/actuator/prometheus"></div>
+        <div class="form-group"><label class="form-label">Log Source</label><input class="form-input" id="edit-svc-logsource" placeholder="e.g. journalctl, kubectl, docker, /var/log/app.log"></div>
+        <div class="form-row">
+            <div class="form-group"><label class="form-label">Namespace</label><input class="form-input" id="edit-svc-namespace" placeholder="default"></div>
+            <div class="form-group"><label class="form-label">Cluster</label><input class="form-input" id="edit-svc-cluster" placeholder="production"></div>
+        </div>
+        <div class="form-group" style="display:flex;align-items:center;gap:10px;">
+            <label class="form-label" style="margin-bottom:0;">Enabled</label>
+            <input type="checkbox" id="edit-svc-enabled" checked style="width:18px;height:18px;accent-color:var(--accent);">
+        </div>
+        <div class="btn-group" style="margin-top:16px;justify-content:flex-end;">
+            <button class="btn btn-secondary" onclick="closeModal('edit-service-modal')">Cancel</button>
+            <button class="btn btn-primary" onclick="updateService()">Save Changes</button>
         </div>
     </div>
 </div>
@@ -687,22 +717,36 @@ async function refreshDashboard() {
 }
 
 // ─── Monitoring ───
+let servicesCache = [];
 async function refreshServices() {
     const services = await api('/api/monitoring/services');
+    servicesCache = services || [];
     const tbody = document.getElementById('monitoring-services');
-    if (!services || services.length === 0) { tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No services registered yet. Click "+ Add Service" to start monitoring.</td></tr>'; return; }
-    tbody.innerHTML = services.map(s => `<tr>
+    if (!services || services.length === 0) { tbody.innerHTML = '<tr><td colspan="9" class="empty-state">No services registered yet. Click "+ Add Service" to start monitoring.</td></tr>'; return; }
+    tbody.innerHTML = services.map(s => {
+        const enabledIcon = s.enabled
+            ? '<span style="color:var(--green);font-weight:600">ON</span>'
+            : '<span style="color:var(--text-dim);font-weight:600">OFF</span>';
+        const rowOpacity = s.enabled ? '1' : '0.5';
+        return `<tr style="opacity:${rowOpacity}">
         <td><strong>${s.name}</strong><br><span style="font-size:11px;color:var(--text-dim)">${s.displayName || ''}</span></td>
         <td><span class="tag">${s.type}</span></td>
         <td style="font-size:12px;font-family:var(--mono)">${s.healthEndpoint || '-'}</td>
         <td><span class="badge-status badge-${s.healthStatus?.toLowerCase()}">${s.healthStatus}</span></td>
+        <td>${enabledIcon}</td>
         <td>${s.consecutiveFailures || 0}</td>
+        <td style="font-size:12px;color:var(--text-dim)">${s.checkIntervalSeconds || 60}s</td>
         <td style="font-size:12px;color:var(--text-dim)">${s.lastCheckAt ? new Date(s.lastCheckAt).toLocaleString() : 'Never'}</td>
         <td>
-            <button class="btn btn-sm btn-secondary" onclick="checkServiceHealth('${s.name}')">Check Now</button>
-            <button class="btn btn-sm btn-danger" onclick="deleteService('${s.id}')">Delete</button>
+            <div class="btn-group" style="flex-wrap:nowrap;">
+                <button class="btn btn-sm btn-secondary" onclick="checkServiceHealth('${s.name}')" title="Run health check now">Check</button>
+                <button class="btn btn-sm btn-secondary" onclick="editService('${s.id}')" title="Edit configuration">Edit</button>
+                <button class="btn btn-sm ${s.enabled ? 'btn-danger' : 'btn-primary'}" onclick="toggleService('${s.id}')" title="${s.enabled ? 'Disable monitoring' : 'Enable monitoring'}">${s.enabled ? 'Disable' : 'Enable'}</button>
+                <button class="btn btn-sm btn-danger" onclick="deleteService('${s.id}')" title="Remove from monitoring">✕</button>
+            </div>
         </td>
-    </tr>`).join('');
+    </tr>`;
+    }).join('');
 }
 async function addService() {
     const body = {
@@ -710,6 +754,8 @@ async function addService() {
         displayName: document.getElementById('svc-display').value,
         type: document.getElementById('svc-type').value,
         healthEndpoint: document.getElementById('svc-endpoint').value,
+        metricsEndpoint: document.getElementById('svc-metrics').value || null,
+        logSource: document.getElementById('svc-logsource').value || null,
         namespace: document.getElementById('svc-namespace').value || null,
         cluster: document.getElementById('svc-cluster').value || null,
         checkIntervalSeconds: parseInt(document.getElementById('svc-interval').value) || 60,
@@ -717,6 +763,54 @@ async function addService() {
     };
     await api('/api/monitoring/services', { method: 'POST', body: JSON.stringify(body) });
     closeModal('add-service-modal');
+    // Clear form
+    ['svc-name','svc-display','svc-endpoint','svc-metrics','svc-logsource','svc-namespace','svc-cluster'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('svc-interval').value = '60';
+    document.getElementById('svc-type').selectedIndex = 0;
+    refreshServices();
+    refreshDashboard();
+}
+function editService(id) {
+    const svc = servicesCache.find(s => s.id === id);
+    if (!svc) { alert('Service not found'); return; }
+    document.getElementById('edit-svc-id').value = svc.id;
+    document.getElementById('edit-svc-name').value = svc.name || '';
+    document.getElementById('edit-svc-display').value = svc.displayName || '';
+    document.getElementById('edit-svc-type').value = svc.type || 'HTTP';
+    document.getElementById('edit-svc-interval').value = svc.checkIntervalSeconds || 60;
+    document.getElementById('edit-svc-endpoint').value = svc.healthEndpoint || '';
+    document.getElementById('edit-svc-metrics').value = svc.metricsEndpoint || '';
+    document.getElementById('edit-svc-logsource').value = svc.logSource || '';
+    document.getElementById('edit-svc-namespace').value = svc.namespace || '';
+    document.getElementById('edit-svc-cluster').value = svc.cluster || '';
+    document.getElementById('edit-svc-enabled').checked = svc.enabled;
+    openModal('edit-service-modal');
+}
+async function updateService() {
+    const id = document.getElementById('edit-svc-id').value;
+    const body = {
+        name: document.getElementById('edit-svc-name').value,
+        displayName: document.getElementById('edit-svc-display').value,
+        type: document.getElementById('edit-svc-type').value,
+        healthEndpoint: document.getElementById('edit-svc-endpoint').value,
+        metricsEndpoint: document.getElementById('edit-svc-metrics').value || null,
+        logSource: document.getElementById('edit-svc-logsource').value || null,
+        namespace: document.getElementById('edit-svc-namespace').value || null,
+        cluster: document.getElementById('edit-svc-cluster').value || null,
+        checkIntervalSeconds: parseInt(document.getElementById('edit-svc-interval').value) || 60,
+        enabled: document.getElementById('edit-svc-enabled').checked
+    };
+    const res = await api(`/api/monitoring/services/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+    if (res) {
+        closeModal('edit-service-modal');
+        refreshServices();
+        refreshDashboard();
+    } else {
+        alert('Failed to update service. Check the console for errors.');
+    }
+}
+async function toggleService(id) {
+    await api(`/api/monitoring/services/${id}/toggle`, { method: 'PATCH' });
     refreshServices();
     refreshDashboard();
 }

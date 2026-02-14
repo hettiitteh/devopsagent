@@ -98,6 +98,53 @@ public class MonitoringController {
     }
 
     /**
+     * Update an existing monitored service.
+     */
+    @PutMapping("/services/{id}")
+    public ResponseEntity<MonitoredService> updateService(
+            @PathVariable String id,
+            @RequestBody Map<String, Object> updates) {
+        return serviceRepository.findById(id)
+                .map(existing -> {
+                    if (updates.containsKey("name"))
+                        existing.setName((String) updates.get("name"));
+                    if (updates.containsKey("displayName"))
+                        existing.setDisplayName((String) updates.get("displayName"));
+                    if (updates.containsKey("type"))
+                        existing.setType(MonitoredService.ServiceType.valueOf((String) updates.get("type")));
+                    if (updates.containsKey("healthEndpoint"))
+                        existing.setHealthEndpoint((String) updates.get("healthEndpoint"));
+                    if (updates.containsKey("namespace"))
+                        existing.setNamespace((String) updates.get("namespace"));
+                    if (updates.containsKey("cluster"))
+                        existing.setCluster((String) updates.get("cluster"));
+                    if (updates.containsKey("checkIntervalSeconds"))
+                        existing.setCheckIntervalSeconds(((Number) updates.get("checkIntervalSeconds")).intValue());
+                    if (updates.containsKey("enabled"))
+                        existing.setEnabled((Boolean) updates.get("enabled"));
+                    if (updates.containsKey("metricsEndpoint"))
+                        existing.setMetricsEndpoint((String) updates.get("metricsEndpoint"));
+                    if (updates.containsKey("logSource"))
+                        existing.setLogSource((String) updates.get("logSource"));
+                    return ResponseEntity.ok(serviceRepository.save(existing));
+                })
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Toggle enable/disable for a monitored service.
+     */
+    @PatchMapping("/services/{id}/toggle")
+    public ResponseEntity<MonitoredService> toggleService(@PathVariable String id) {
+        return serviceRepository.findById(id)
+                .map(existing -> {
+                    existing.setEnabled(!existing.isEnabled());
+                    return ResponseEntity.ok(serviceRepository.save(existing));
+                })
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    /**
      * Delete a monitored service.
      */
     @DeleteMapping("/services/{id}")

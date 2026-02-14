@@ -52,20 +52,30 @@ public class MonitoringService {
     private final Map<String, List<HealthCheckResult>> healthHistory = new ConcurrentHashMap<>();
 
     /**
-     * Periodic health check for all monitored services.
+     * Periodic scheduler that ticks every 5 seconds and checks each service
+     * only when its individual checkIntervalSeconds has elapsed since the last check.
+     * This respects per-service monitoring frequency set via the UI.
      */
-    @Scheduled(fixedDelayString = "${devops-agent.monitoring.health-check-interval-seconds:60}000")
+    @Scheduled(fixedDelay = 5000)
     public void runHealthChecks() {
         if (!properties.getMonitoring().isEnabled()) return;
 
         List<MonitoredService> services = serviceRepository.findByEnabled(true);
         if (services.isEmpty()) return;
 
-        log.debug("Running health checks for {} services", services.size());
+        Instant now = Instant.now();
 
         for (MonitoredService service : services) {
             try {
-                checkServiceHealth(service);
+                int intervalSeconds = service.getCheckIntervalSeconds() > 0
+                        ? service.getCheckIntervalSeconds() : 60;
+
+                // Check if enough time has passed since the last health check
+                if (service.getLastCheckAt() == null ||
+                        Duration.between(service.getLastCheckAt(), now).getSeconds() >= intervalSeconds) {
+                    log.debug("Health check due for {} (interval: {}s)", service.getName(), intervalSeconds);
+                    checkServiceHealth(service);
+                }
             } catch (Exception e) {
                 log.error("Health check failed for service {}: {}", service.getName(), e.getMessage());
             }
