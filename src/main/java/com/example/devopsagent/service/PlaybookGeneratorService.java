@@ -2,16 +2,14 @@ package com.example.devopsagent.service;
 
 import com.example.devopsagent.agent.AgentEngine;
 import com.example.devopsagent.agent.AgentMessage;
+import com.example.devopsagent.domain.PlaybookDefinition;
 import com.example.devopsagent.playbook.Playbook;
 import com.example.devopsagent.playbook.PlaybookEngine;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import com.example.devopsagent.repository.PlaybookDefinitionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.io.File;
-import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -27,10 +25,8 @@ public class PlaybookGeneratorService {
 
     private final AgentEngine agentEngine;
     private final PlaybookEngine playbookEngine;
+    private final PlaybookDefinitionRepository definitionRepository;
     private final AuditService auditService;
-    private final ObjectMapper objectMapper;
-
-    private final ObjectMapper yamlMapper = new ObjectMapper(new YAMLFactory());
 
     /**
      * Generate a playbook from an agent session's tool call history.
@@ -95,76 +91,63 @@ public class PlaybookGeneratorService {
     }
 
     /**
-     * Save a playbook to disk and reload the engine.
+     * Save a playbook to the database and reload the engine cache.
      * Used by the UI create form, the chat agent tool, and the session-based generator.
      */
     public Playbook savePlaybook(Playbook playbook, Map<String, Object> extraAuditData) {
-        try {
-            // Ensure the playbook has an ID
-            if (playbook.getId() == null || playbook.getId().isBlank()) {
-                String id = playbook.getName().toLowerCase().replaceAll("[^a-z0-9]+", "-").replaceAll("^-|-$", "");
-                playbook.setId(id);
-            }
-            if (playbook.getVersion() == null) playbook.setVersion("1.0");
-            if (playbook.getAuthor() == null) playbook.setAuthor("user");
-
-            // Ensure step ordering
-            if (playbook.getSteps() != null) {
-                for (int i = 0; i < playbook.getSteps().size(); i++) {
-                    playbook.getSteps().get(i).setOrder(i + 1);
-                }
-            }
-
-            String directory = "./playbooks";
-            File dir = new File(directory);
-            if (!dir.exists()) dir.mkdirs();
-
-            String filename = playbook.getId() + ".yml";
-            File file = new File(dir, filename);
-            yamlMapper.writeValue(file, playbook);
-
-            log.info("Saved playbook '{}' to {}", playbook.getName(), file.getAbsolutePath());
-
-            // Reload playbooks so the new one is available
-            playbookEngine.loadPlaybooks();
-
-            // Audit
-            Map<String, Object> auditData = new HashMap<>(Map.of(
-                    "name", playbook.getName(),
-                    "steps", playbook.getSteps() != null ? playbook.getSteps().size() : 0));
-            if (extraAuditData != null) auditData.putAll(extraAuditData);
-            auditService.log("system", "PLAYBOOK_SAVED", playbook.getId(), auditData);
-
-            return playbook;
-        } catch (IOException e) {
-            log.error("Failed to save playbook: {}", e.getMessage());
-            throw new RuntimeException("Failed to save playbook: " + e.getMessage(), e);
+        // Ensure the playbook has an ID
+        if (playbook.getId() == null || playbook.getId().isBlank()) {
+            String id = playbook.getName().toLowerCase().replaceAll("[^a-z0-9]+", "-").replaceAll("^-|-$", "");
+            playbook.setId(id);
         }
+        if (playbook.getVersion() == null) playbook.setVersion("1.0");
+        if (playbook.getAuthor() == null) playbook.setAuthor("user");
+
+        // Ensure step ordering
+        if (playbook.getSteps() != null) {
+            for (int i = 0; i < playbook.getSteps().size(); i++) {
+                playbook.getSteps().get(i).setOrder(i + 1);
+            }
+        }
+
+        // Determine source from audit data, default to "ui"
+        String source = "ui";
+        if (extraAuditData != null && extraAuditData.containsKey("source")) {
+            source = extraAuditData.get("source").toString();
+        }
+
+        PlaybookDefinition def = PlaybookDefinition.fromPlaybook(playbook, source);
+        def.setEnabled(true);
+        definitionRepository.save(def);
+
+        log.info("Saved playbook '{}' to database (id: {})", playbook.getName(), def.getId());
+
+        // Reload playbooks so the new one is available in the cache
+        playbookEngine.loadPlaybooks();
+
+        // Audit
+        Map<String, Object> auditData = new HashMap<>(Map.of(
+                "name", playbook.getName(),
+                "steps", playbook.getSteps() != null ? playbook.getSteps().size() : 0));
+        if (extraAuditData != null) auditData.putAll(extraAuditData);
+        auditService.log("system", "PLAYBOOK_SAVED", playbook.getId(), auditData);
+
+        return playbook;
     }
 
     /**
-     * Delete a playbook from disk and reload the engine.
+     * Delete a playbook from the database and reload the engine cache.
      */
     public boolean deletePlaybook(String playbookId) {
-        String directory = "./playbooks";
-        File file = new File(directory, playbookId + ".yml");
-        if (!file.exists()) {
-            // Try .yaml extension
-            file = new File(directory, playbookId + ".yaml");
-        }
-        if (!file.exists()) {
-            log.warn("Playbook file not found for deletion: {}", playbookId);
+        if (!definitionRepository.existsById(playbookId)) {
+            log.warn("Playbook not found in database for deletion: {}", playbookId);
             return false;
         }
 
-        boolean deleted = file.delete();
-        if (deleted) {
-            log.info("Deleted playbook file: {}", file.getAbsolutePath());
-            playbookEngine.loadPlaybooks();
-            auditService.log("system", "PLAYBOOK_DELETED", playbookId, Map.of());
-        } else {
-            log.error("Failed to delete playbook file: {}", file.getAbsolutePath());
-        }
-        return deleted;
+        definitionRepository.deleteById(playbookId);
+        log.info("Deleted playbook from database: {}", playbookId);
+        playbookEngine.loadPlaybooks();
+        auditService.log("system", "PLAYBOOK_DELETED", playbookId, Map.of());
+        return true;
     }
 }

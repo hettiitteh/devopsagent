@@ -1,0 +1,29 @@
+---
+id: "auto-restart-docker-mysql-service"
+name: "Auto-Restart Docker MySQL Service"
+description: "Automatically restart the Docker MySQL service when it becomes unhealthy."
+version: "1.0"
+author: "user"
+triggers:
+- type: "service_unhealthy"
+  service: "local-mysql"
+  severity: "HIGH"
+  alertRuleId: null
+steps:
+- order: 1
+  name: "Restart MySQL Docker Service"
+  description: null
+  tool: "service_restart"
+  parameters: {}
+  onFailure: "abort"
+  maxRetries: 0
+  retryDelaySeconds: 0
+  timeoutSeconds: 0
+  condition: null
+variables: {}
+tags:
+- "docker"
+- "mysql"
+- "restart"
+approvalRequired: false
+maxExecutionTimeSeconds: 300

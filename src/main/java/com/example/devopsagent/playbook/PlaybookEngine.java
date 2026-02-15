@@ -5,8 +5,10 @@ import com.example.devopsagent.agent.ToolContext;
 import com.example.devopsagent.agent.ToolRegistry;
 import com.example.devopsagent.agent.ToolResult;
 import com.example.devopsagent.config.AgentProperties;
+import com.example.devopsagent.domain.PlaybookDefinition;
 import com.example.devopsagent.domain.PlaybookExecution;
 import com.example.devopsagent.gateway.GatewayWebSocketHandler;
+import com.example.devopsagent.repository.PlaybookDefinitionRepository;
 import com.example.devopsagent.repository.PlaybookExecutionRepository;
 import com.example.devopsagent.service.AuditService;
 import com.example.devopsagent.service.LearningService;
@@ -42,6 +44,7 @@ public class PlaybookEngine {
 
     private final ToolRegistry toolRegistry;
     private final PlaybookExecutionRepository executionRepository;
+    private final PlaybookDefinitionRepository definitionRepository;
     private final AgentProperties properties;
     private final GatewayWebSocketHandler gatewayHandler;
     private final AuditService auditService;
@@ -57,48 +60,117 @@ public class PlaybookEngine {
     }
 
     /**
-     * Load playbooks from the configured directory.
+     * Load playbooks from the database.
+     * On first boot (empty DB), migrates existing YAML files from disk.
      */
     public void loadPlaybooks() {
+        // Migration: if the DB is empty, import YAML files from disk
+        if (definitionRepository.count() == 0) {
+            migrateYamlToDb();
+        }
+
+        // Load enabled playbooks from DB
+        playbooks.clear();
+        List<PlaybookDefinition> definitions = definitionRepository.findByEnabledTrue();
+        for (PlaybookDefinition def : definitions) {
+            try {
+                Playbook playbook = def.toPlaybook();
+                playbooks.put(playbook.getId(), playbook);
+                log.debug("Loaded playbook from DB: {} ({} steps)", playbook.getName(),
+                        playbook.getSteps() != null ? playbook.getSteps().size() : 0);
+            } catch (Exception e) {
+                log.error("Failed to load playbook definition {}: {}", def.getId(), e.getMessage());
+            }
+        }
+
+        log.info("Loaded {} playbooks from database", playbooks.size());
+    }
+
+    /**
+     * One-time migration: reads existing YAML files from the playbooks directory,
+     * converts each to a PlaybookDefinition, and saves to the database.
+     * After migration, YAML files remain on disk as backup but are never read again.
+     */
+    private void migrateYamlToDb() {
         String directory = properties.getPlaybooks().getDirectory();
         File dir = new File(directory);
 
         if (!dir.exists()) {
             dir.mkdirs();
             log.info("Created playbooks directory: {}", directory);
+            // Create sample YAML playbooks first, then migrate them
             createSamplePlaybooks(dir);
-            return;
         }
 
         File[] files = dir.listFiles((d, name) -> name.endsWith(".yml") || name.endsWith(".yaml"));
         if (files == null || files.length == 0) {
-            log.info("No playbooks found in {}", directory);
+            log.info("No YAML playbooks found to migrate in {}", directory);
             createSamplePlaybooks(dir);
-            return;
+            // Re-scan after creating samples
+            files = dir.listFiles((d, name) -> name.endsWith(".yml") || name.endsWith(".yaml"));
+            if (files == null || files.length == 0) return;
         }
 
+        int migrated = 0;
         for (File file : files) {
             try {
                 Playbook playbook = yamlMapper.readValue(file, Playbook.class);
                 if (playbook.getId() == null) {
                     playbook.setId(file.getName().replace(".yml", "").replace(".yaml", ""));
                 }
-                playbooks.put(playbook.getId(), playbook);
-                log.info("Loaded playbook: {} ({} steps)", playbook.getName(), playbook.getSteps().size());
+
+                // Migrate single severity to severities list for any triggers
+                if (playbook.getTriggers() != null) {
+                    for (Playbook.TriggerCondition trigger : playbook.getTriggers()) {
+                        if (trigger.getSeverities() == null) {
+                            trigger.setSeverities(new ArrayList<>());
+                        }
+                        // The @JsonSetter("severity") handles the old format during deserialization,
+                        // but if severities is still empty and we want a default, add "*"
+                        if (trigger.getSeverities().isEmpty()) {
+                            trigger.getSeverities().add("*");
+                        }
+                    }
+                }
+
+                PlaybookDefinition def = PlaybookDefinition.fromPlaybook(playbook, "yaml-import");
+                def.setEnabled(true);
+                definitionRepository.save(def);
+                migrated++;
+                log.info("Migrated playbook '{}' from YAML to database", playbook.getName());
             } catch (IOException e) {
-                log.error("Failed to load playbook {}: {}", file.getName(), e.getMessage());
+                log.error("Failed to migrate playbook {}: {}", file.getName(), e.getMessage());
             }
         }
 
-        log.info("Loaded {} playbooks", playbooks.size());
+        log.info("Migrated {} playbooks from YAML to database", migrated);
     }
 
     /**
-     * Execute a playbook.
+     * Execute a playbook synchronously. Used by PlaybookRunTool and other callers
+     * that need the result immediately.
      */
-    @Async("playbookExecutor")
     public ToolResult executePlaybook(String playbookId, String incidentId,
                                        Map<String, Object> parameters, boolean dryRun) {
+        return doExecutePlaybook(playbookId, incidentId, parameters, dryRun);
+    }
+
+    /**
+     * Execute a playbook asynchronously (fire-and-forget).
+     * Used by autoTriggerPlaybooks and the REST controller where we don't need
+     * to wait for the result.
+     */
+    @Async("playbookExecutor")
+    public void executePlaybookAsync(String playbookId, String incidentId,
+                                      Map<String, Object> parameters, boolean dryRun) {
+        doExecutePlaybook(playbookId, incidentId, parameters, dryRun);
+    }
+
+    /**
+     * Internal playbook execution logic shared by sync and async entry points.
+     */
+    private ToolResult doExecutePlaybook(String playbookId, String incidentId,
+                                          Map<String, Object> parameters, boolean dryRun) {
         Playbook playbook = playbooks.get(playbookId);
         if (playbook == null) {
             return ToolResult.error("Playbook not found: " + playbookId);
@@ -363,14 +435,16 @@ public class PlaybookEngine {
                 boolean serviceMatch = trigger.getService() == null
                         || trigger.getService().equals("*")
                         || trigger.getService().equalsIgnoreCase(serviceName);
-                boolean severityMatch = trigger.getSeverity() == null
-                        || trigger.getSeverity().equals("*")
-                        || trigger.getSeverity().equalsIgnoreCase(severity);
-                yield serviceMatch && severityMatch;
+                // For service_unhealthy, any severity qualifies — the service being down
+                // is reason enough to trigger. The severities list is informational.
+                yield serviceMatch;
             }
             case "incident_severity" -> {
-                yield trigger.getSeverity() != null
-                        && trigger.getSeverity().equalsIgnoreCase(severity);
+                // Multi-severity match: fire if the incident's severity is in the trigger's list
+                List<String> severities = trigger.getSeverities();
+                yield severities != null && !severities.isEmpty()
+                        && (severities.contains("*")
+                            || severities.stream().anyMatch(s -> s.equalsIgnoreCase(severity)));
             }
             default -> false;
         };
@@ -379,8 +453,19 @@ public class PlaybookEngine {
     /**
      * Auto-trigger matching playbooks for a service incident.
      * Called by MonitoringService when an incident is created and auto-execute is enabled.
+     * Overload for backward compatibility (no serviceType).
      */
     public void autoTriggerPlaybooks(String serviceName, String severity, String incidentId) {
+        autoTriggerPlaybooks(serviceName, severity, incidentId, "docker");
+    }
+
+    /**
+     * Auto-trigger matching playbooks for a service incident.
+     * Called by MonitoringService when an incident is created and auto-execute is enabled.
+     *
+     * @param serviceType the restart type for the service (docker, kubernetes, systemd)
+     */
+    public void autoTriggerPlaybooks(String serviceName, String severity, String incidentId, String serviceType) {
         if (!properties.getPlaybooks().isAutoExecute()) {
             log.debug("Playbook auto-execute is disabled, skipping auto-trigger for service: {}", serviceName);
             return;
@@ -416,8 +501,10 @@ public class PlaybookEngine {
             ));
 
             // Execute the playbook asynchronously (not a dry run)
+            // Include service_type so playbook steps with empty params can use it
             executePlaybook(pb.getId(), incidentId, Map.of(
                     "service_name", serviceName,
+                    "service_type", serviceType,
                     "service_url", "http://localhost:9090" // will be overridden by step params if set
             ), false);
         }
@@ -435,6 +522,14 @@ public class PlaybookEngine {
      */
     public Collection<Playbook> getAllPlaybooks() {
         return playbooks.values();
+    }
+
+    /**
+     * Expose the definition repository for controllers that need direct DB access
+     * (e.g. edit, toggle, list with full data).
+     */
+    public PlaybookDefinitionRepository getDefinitionRepository() {
+        return definitionRepository;
     }
 
     /**

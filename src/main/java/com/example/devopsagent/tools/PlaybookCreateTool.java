@@ -31,7 +31,13 @@ public class PlaybookCreateTool implements AgentTool {
         return "Create a new reusable playbook (runbook) from a sequence of tool steps. " +
                "Use this when you want to save a remediation workflow as an automated playbook " +
                "that can be triggered later. Provide a name, description, and an ordered list of steps " +
-               "where each step specifies a tool and its parameters.";
+               "where each step specifies a tool and its parameters. " +
+               "IMPORTANT: Follow the Playbook Authoring Standards from your system prompt. " +
+               "Every playbook MUST have at least 4 steps: (1) Verify the problem (health_check, onFailure=continue), " +
+               "(2) Collect diagnostics (log_search/docker_exec/network_diag, onFailure=continue), " +
+               "(3) Remediate (service_restart with full params including service_type, onFailure=abort), " +
+               "(4) Verify recovery (health_check with retries, onFailure=retry). " +
+               "NEVER leave step parameters empty — every step must have fully specified parameters.";
     }
 
     @Override
@@ -117,10 +123,16 @@ public class PlaybookCreateTool implements AgentTool {
             String triggerService = (String) parameters.get("trigger_service");
             String triggerSeverity = (String) parameters.get("trigger_severity");
             if (triggerService != null || triggerSeverity != null) {
+                List<String> sevList = new ArrayList<>();
+                if (triggerSeverity != null && !triggerSeverity.isBlank()) {
+                    sevList.add(triggerSeverity);
+                } else {
+                    sevList.add("*");
+                }
                 triggers.add(Playbook.TriggerCondition.builder()
                         .type("service_unhealthy")
                         .service(triggerService != null ? triggerService : "*")
-                        .severity(triggerSeverity != null ? triggerSeverity : "*")
+                        .severities(sevList)
                         .build());
             }
 

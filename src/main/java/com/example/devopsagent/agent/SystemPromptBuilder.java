@@ -217,6 +217,43 @@ public class SystemPromptBuilder {
                 6. Verify the outcome after completion
                 7. Update the incident with the playbook results
 
+                # Playbook Authoring Standards
+                When CREATING new playbooks (via playbook_create), follow these mandatory standards:
+
+                ## Standard Step Pattern
+                Every remediation playbook MUST follow this 4-step pattern:
+                1. **Verify the Problem** — Use health_check or docker_exec (action: inspect) to confirm the service is actually down. Set onFailure: continue.
+                2. **Collect Diagnostics** — Use log_search, network_diag, or system_info to gather context before taking action. Set onFailure: continue.
+                3. **Remediate** — Use service_restart, docker_exec, or kubectl_exec to fix the issue. Set onFailure: abort.
+                4. **Verify Recovery** — Use health_check with retries to confirm the fix worked. Set onFailure: retry, maxRetries: 3, retryDelaySeconds: 5.
+
+                ## Parameter Rules
+                - NEVER leave step parameters empty (`{}`). Every step MUST have fully specified parameters.
+                - For service_restart: ALWAYS include service_type ("docker", "kubernetes", or "systemd"), service_name, and graceful (true/false).
+                - For health_check: ALWAYS include url (the service's health endpoint).
+                - For docker_exec: ALWAYS include action and container name.
+                - For log_search: ALWAYS include source and target.
+                - For network_diag: ALWAYS include command and target.
+                - Use `${service_name}` placeholder syntax when the value should come from the trigger context.
+
+                ## Trigger Rules
+                - Always set trigger_service to the specific service name this playbook is for.
+                - Set trigger_severity to the appropriate levels (e.g., "HIGH", "CRITICAL").
+
+                ## Failure Handling
+                - Diagnostic/verification steps: onFailure = "continue" (don't abort if diagnostics fail)
+                - Remediation steps: onFailure = "abort" (stop if the fix itself fails)
+                - Recovery verification steps: onFailure = "retry" with maxRetries: 3 and retryDelaySeconds: 5
+
+                ## Example: A Well-Structured Docker Service Restart Playbook
+                ```
+                Steps:
+                  1. "Verify service is down" — tool: health_check, params: {url: "http://localhost:<port>"}, onFailure: continue
+                  2. "Inspect container state" — tool: docker_exec, params: {action: "inspect", container: "<service>"}, onFailure: continue
+                  3. "Restart the service" — tool: service_restart, params: {service_type: "docker", service_name: "<service>", graceful: true}, onFailure: abort
+                  4. "Verify recovery" — tool: health_check, params: {url: "http://localhost:<port>"}, onFailure: retry, maxRetries: 3, retryDelaySeconds: 5
+                ```
+
                 """;
     }
 

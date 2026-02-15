@@ -1,14 +1,18 @@
 package com.example.devopsagent.controller;
 
+import com.example.devopsagent.domain.PlaybookDefinition;
 import com.example.devopsagent.domain.PlaybookExecution;
 import com.example.devopsagent.playbook.Playbook;
 import com.example.devopsagent.playbook.PlaybookEngine;
+import com.example.devopsagent.repository.PlaybookDefinitionRepository;
 import com.example.devopsagent.repository.PlaybookExecutionRepository;
 import com.example.devopsagent.service.PlaybookGeneratorService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -22,6 +26,7 @@ public class PlaybookController {
 
     private final PlaybookEngine playbookEngine;
     private final PlaybookExecutionRepository executionRepository;
+    private final PlaybookDefinitionRepository definitionRepository;
     private final PlaybookGeneratorService playbookGeneratorService;
 
     /**
@@ -33,21 +38,29 @@ public class PlaybookController {
     }
 
     /**
-     * List all playbooks as structured JSON.
+     * List all playbooks as structured JSON with full trigger data.
+     * Returns all playbook definitions from the DB (including disabled ones).
      */
     @GetMapping("/list")
     public ResponseEntity<List<Map<String, Object>>> listPlaybooksStructured() {
-        List<Map<String, Object>> result = new java.util.ArrayList<>();
-        for (Playbook pb : playbookEngine.getAllPlaybooks()) {
-            result.add(Map.of(
-                    "id", pb.getId() != null ? pb.getId() : "",
-                    "name", pb.getName() != null ? pb.getName() : "",
-                    "description", pb.getDescription() != null ? pb.getDescription() : "",
-                    "steps", pb.getSteps() != null ? pb.getSteps().size() : 0,
-                    "approvalRequired", pb.isApprovalRequired(),
-                    "tags", pb.getTags() != null ? pb.getTags() : List.of(),
-                    "author", pb.getAuthor() != null ? pb.getAuthor() : ""
-            ));
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (PlaybookDefinition def : definitionRepository.findAllByOrderByCreatedAtDesc()) {
+            Playbook pb = def.toPlaybook();
+            Map<String, Object> entry = new HashMap<>();
+            entry.put("id", pb.getId() != null ? pb.getId() : "");
+            entry.put("name", pb.getName() != null ? pb.getName() : "");
+            entry.put("description", pb.getDescription() != null ? pb.getDescription() : "");
+            entry.put("steps", pb.getSteps() != null ? pb.getSteps().size() : 0);
+            entry.put("stepsDetail", pb.getSteps() != null ? pb.getSteps() : List.of());
+            entry.put("approvalRequired", pb.isApprovalRequired());
+            entry.put("tags", pb.getTags() != null ? pb.getTags() : List.of());
+            entry.put("author", pb.getAuthor() != null ? pb.getAuthor() : "");
+            entry.put("triggers", pb.getTriggers() != null ? pb.getTriggers() : List.of());
+            entry.put("enabled", def.isEnabled());
+            entry.put("source", def.getSource() != null ? def.getSource() : "");
+            entry.put("version", pb.getVersion() != null ? pb.getVersion() : "1.0");
+            entry.put("maxExecutionTimeSeconds", pb.getMaxExecutionTimeSeconds());
+            result.add(entry);
         }
         return ResponseEntity.ok(result);
     }
@@ -78,6 +91,53 @@ public class PlaybookController {
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
+    }
+
+    /**
+     * Update an existing playbook definition.
+     */
+    @PutMapping("/{id}")
+    public ResponseEntity<Map<String, Object>> updatePlaybook(@PathVariable String id,
+                                                               @RequestBody Playbook playbook) {
+        return definitionRepository.findById(id)
+                .map(existing -> {
+                    // Update the definition from the incoming playbook
+                    playbook.setId(id); // preserve the ID
+                    PlaybookDefinition updated = PlaybookDefinition.fromPlaybook(playbook,
+                            existing.getSource() != null ? existing.getSource() : "ui");
+                    updated.setEnabled(existing.isEnabled());
+                    updated.setCreatedAt(existing.getCreatedAt());
+                    definitionRepository.save(updated);
+
+                    // Refresh engine cache
+                    playbookEngine.loadPlaybooks();
+
+                    return ResponseEntity.ok(Map.<String, Object>of(
+                            "id", id,
+                            "name", playbook.getName(),
+                            "message", "Playbook updated successfully"
+                    ));
+                })
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Toggle a playbook's enabled state.
+     */
+    @PatchMapping("/{id}/toggle")
+    public ResponseEntity<Map<String, Object>> togglePlaybook(@PathVariable String id) {
+        return definitionRepository.findById(id)
+                .map(def -> {
+                    def.setEnabled(!def.isEnabled());
+                    definitionRepository.save(def);
+                    playbookEngine.loadPlaybooks();
+                    return ResponseEntity.ok(Map.<String, Object>of(
+                            "id", id,
+                            "enabled", def.isEnabled(),
+                            "message", (def.isEnabled() ? "Enabled" : "Disabled") + " playbook: " + def.getName()
+                    ));
+                })
+                .orElse(ResponseEntity.notFound().build());
     }
 
     /**

@@ -191,9 +191,30 @@ public class PlaybookSuggestionService {
                 
                 %s
                 
+                ## Playbook Authoring Standards (MANDATORY)
+                Every playbook you suggest MUST follow this 4-step pattern:
+                1. **Verify the Problem** — health_check or docker_exec (inspect) to confirm the issue. onFailure: "continue".
+                2. **Collect Diagnostics** — log_search, network_diag, docker_exec, or system_info to gather context. onFailure: "continue".
+                3. **Remediate** — service_restart, docker_exec, or kubectl_exec to fix the issue. onFailure: "abort".
+                   For service_restart: ALWAYS include service_type ("docker"/"kubernetes"/"systemd"), service_name, and graceful.
+                4. **Verify Recovery** — health_check with retry settings. onFailure: "retry", maxRetries: 3, retryDelaySeconds: 5.
+                
+                CRITICAL RULES:
+                - NEVER leave step parameters empty ({}). Every step MUST have fully specified parameters.
+                - Use the service name from triggerService in the parameters (e.g. container name, service_name).
+                - Include the service health URL in health_check steps.
+                
+                ## Example of a correct step list
+                [
+                  {"name": "Verify service down", "tool": "health_check", "parameters": {"url": "http://localhost:3306"}, "on_failure": "continue"},
+                  {"name": "Inspect container", "tool": "docker_exec", "parameters": {"action": "inspect", "container": "local-mysql"}, "on_failure": "continue"},
+                  {"name": "Restart service", "tool": "service_restart", "parameters": {"service_type": "docker", "service_name": "local-mysql", "graceful": true}, "on_failure": "abort"},
+                  {"name": "Verify recovery", "tool": "health_check", "parameters": {"url": "http://localhost:3306"}, "on_failure": "retry", "maxRetries": 3, "retryDelaySeconds": 5}
+                ]
+                
                 ## Task
                 Suggest 1-3 NEW playbooks that automate recurring patterns not covered by existing playbooks.
-                For each, respond with a JSON object: {"name": "...", "description": "...", "reasoning": "...", "steps": [{"name": "...", "tool": "...", "parameters": {}}], "triggerService": "...", "triggerSeverity": "..."}.
+                For each, respond with a JSON object: {"name": "...", "description": "...", "reasoning": "...", "steps": [{"name": "...", "tool": "...", "parameters": {...}, "on_failure": "..."}], "triggerService": "...", "triggerSeverity": "..."}.
                 Respond ONLY with a JSON array. No markdown, no explanation outside the JSON.
                 """.formatted(dataSection.toString());
 
@@ -309,7 +330,7 @@ public class PlaybookSuggestionService {
         triggers.add(Playbook.TriggerCondition.builder()
                 .type("service_unhealthy")
                 .service(triggerService)
-                .severity("*")
+                .severities(List.of("HIGH", "CRITICAL"))
                 .build());
 
         Playbook playbook = Playbook.builder()

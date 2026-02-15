@@ -332,11 +332,18 @@ public class MonitoringService {
         }
 
         // Auto-trigger matching playbooks with the classified severity
+        // Map MonitoredService.ServiceType to the service_restart tool's type string
+        String serviceTypeForRestart = switch (service.getType()) {
+            case DOCKER_CONTAINER -> "docker";
+            case KUBERNETES_DEPLOYMENT, KUBERNETES_STATEFULSET -> "kubernetes";
+            default -> "systemd";
+        };
         try {
             playbookEngine.autoTriggerPlaybooks(
                     service.getName(),
                     classifiedSeverity.name(),
-                    incidentId
+                    incidentId,
+                    serviceTypeForRestart
             );
         } catch (Exception e) {
             log.error("Failed to auto-trigger playbooks for service {}: {}", service.getName(), e.getMessage());

@@ -1,5 +1,7 @@
 package com.example.devopsagent.playbook;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonSetter;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -56,11 +58,33 @@ public class Playbook {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class TriggerCondition {
         private String type; // "incident_severity", "service_unhealthy", "alert_rule", "manual"
         private String service;
-        private String severity;
+
+        /**
+         * Multiple severities this trigger responds to.
+         * Example: ["HIGH", "CRITICAL"] or ["*"] for any.
+         */
+        @Builder.Default
+        private List<String> severities = new ArrayList<>();
+
         private String alertRuleId;
+
+        /**
+         * Backward-compatible setter: if old YAML/JSON has a single "severity" string,
+         * convert it to a one-element severities list.
+         */
+        @JsonSetter("severity")
+        public void setSeverityCompat(String severity) {
+            if (severity != null && !severity.isBlank()) {
+                if (this.severities == null) this.severities = new ArrayList<>();
+                if (!this.severities.contains(severity)) {
+                    this.severities.add(severity);
+                }
+            }
+        }
     }
 
     @Data

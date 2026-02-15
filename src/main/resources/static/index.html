@@ -459,10 +459,10 @@
         <div class="page" id="page-playbooks">
             <div class="page-header">
                 <h2>Playbooks</h2>
-                <p>YAML-based runbooks for automated remediation</p>
+                <p>Automated remediation runbooks stored in the database</p>
             </div>
             <div class="btn-group" style="margin-bottom:16px;">
-                <button class="btn btn-primary" onclick="document.getElementById('create-playbook-modal').classList.add('active')">+ Create Playbook</button>
+                <button class="btn btn-primary" onclick="openPlaybookModal()">+ Create Playbook</button>
                 <button class="btn btn-secondary" onclick="loadPlaybooks()">↻ Reload</button>
                 <button class="btn btn-secondary" id="btn-generate-ai" onclick="generateAiSuggestions()">🧠 Generate AI Suggestions</button>
             </div>
@@ -475,7 +475,26 @@
             </div>
 
             <h3 style="margin-bottom:12px;">Available Playbooks</h3>
-            <div id="playbooks-list"><div class="empty-state"><div class="loading"></div><br>Loading playbooks...</div></div>
+            <div class="card">
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Triggers</th>
+                                <th>Steps</th>
+                                <th>Approval</th>
+                                <th>Enabled</th>
+                                <th>Source</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="playbooks-table">
+                            <tr><td colspan="7" class="empty-state">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
 
         <!-- Learnings -->
@@ -792,8 +811,9 @@
 </div>
 
 <div class="modal-overlay" id="create-playbook-modal">
-    <div class="modal" style="max-width:700px;">
-        <h3>Create Playbook</h3>
+    <div class="modal" style="max-width:720px;">
+        <h3 id="pb-modal-title">Create Playbook</h3>
+        <input type="hidden" id="pb-edit-id" value="">
         <div class="form-row">
             <div class="form-group" style="flex:2"><label class="form-label">Playbook Name</label><input class="form-input" id="pb-name" placeholder="e.g. Docker Service Restart"></div>
             <div class="form-group"><label class="form-label">Author</label><input class="form-input" id="pb-author" placeholder="user" value="user"></div>
@@ -801,22 +821,44 @@
         <div class="form-group"><label class="form-label">Description</label><textarea class="form-textarea" id="pb-description" placeholder="Describe what this playbook does and when to use it..."></textarea></div>
         <div class="form-row">
             <div class="form-group"><label class="form-label">Tags (comma-separated)</label><input class="form-input" id="pb-tags" placeholder="docker, restart, remediation"></div>
-            <div class="form-group" style="flex:0;min-width:150px;display:flex;align-items:flex-end;">
+            <div class="form-group" style="flex:0;min-width:200px;display:flex;align-items:flex-end;gap:16px;">
                 <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.85rem;">
                     <input type="checkbox" id="pb-approval"> Approval required
                 </label>
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.85rem;">
+                    <input type="checkbox" id="pb-enabled" checked> Enabled
+                </label>
             </div>
         </div>
+        <h4 style="margin:12px 0 6px;">Trigger Conditions</h4>
         <div class="form-row" style="margin-bottom:4px;">
-            <div class="form-group"><label class="form-label">Trigger Service (optional)</label><input class="form-input" id="pb-trigger-service" placeholder="e.g. my-app"></div>
-            <div class="form-group"><label class="form-label">Trigger Severity (optional)</label>
-                <select class="form-select" id="pb-trigger-severity">
-                    <option value="">-- None --</option>
-                    <option>LOW</option>
-                    <option>MEDIUM</option>
-                    <option>HIGH</option>
-                    <option>CRITICAL</option>
+            <div class="form-group"><label class="form-label">Trigger Type</label>
+                <select class="form-select" id="pb-trigger-type">
+                    <option value="service_unhealthy">service_unhealthy</option>
+                    <option value="incident_severity">incident_severity</option>
+                    <option value="manual">manual</option>
                 </select>
+            </div>
+            <div class="form-group"><label class="form-label">Trigger Service</label><input class="form-input" id="pb-trigger-service" placeholder="e.g. my-app or * for any"></div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Trigger Severities</label>
+            <div style="display:flex;gap:16px;flex-wrap:wrap;padding:4px 0;">
+                <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.85rem;">
+                    <input type="checkbox" class="pb-sev-cb" value="LOW"> LOW
+                </label>
+                <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.85rem;">
+                    <input type="checkbox" class="pb-sev-cb" value="MEDIUM"> MEDIUM
+                </label>
+                <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.85rem;">
+                    <input type="checkbox" class="pb-sev-cb" value="HIGH" checked> HIGH
+                </label>
+                <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.85rem;">
+                    <input type="checkbox" class="pb-sev-cb" value="CRITICAL" checked> CRITICAL
+                </label>
+                <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.85rem;">
+                    <input type="checkbox" class="pb-sev-cb" value="*"> Any (*)
+                </label>
             </div>
         </div>
         <h4 style="margin:12px 0 8px;">Steps</h4>
@@ -1323,31 +1365,53 @@ async function toggleToolApproval(toolName, requiresApproval) {
 // ─── Playbooks ───
 async function loadPlaybooks() {
     const data = await api('/api/playbooks/list');
-    const container = document.getElementById('playbooks-list');
+    const tbody = document.getElementById('playbooks-table');
     if (!data || !Array.isArray(data) || data.length === 0) {
-        container.innerHTML = '<div class="empty-state">No playbooks available. Create one using the button above or ask the agent in chat.</div>';
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No playbooks available. Create one using the button above or ask the agent in chat.</td></tr>';
+        loadSuggestions();
         return;
     }
-    container.innerHTML = data.map(pb => {
-        const tags = (pb.tags || []).map(t => `<span style="background:var(--bg-surface);padding:2px 6px;border-radius:4px;font-size:11px;margin-right:4px;">${t}</span>`).join('');
-        return `<div class="card" style="display:flex;align-items:center;justify-content:space-between;">
-            <div style="flex:1;">
+    tbody.innerHTML = data.map(pb => {
+        // Build trigger badges
+        let triggerHtml = '';
+        if (pb.triggers && pb.triggers.length > 0) {
+            const t = pb.triggers[0];
+            const svc = t.service || '*';
+            const sevs = (t.severities && t.severities.length > 0) ? t.severities : (t.severity ? [t.severity] : ['*']);
+            triggerHtml = `<div style="font-size:11px;"><code>${svc}</code></div>`;
+            triggerHtml += `<div style="margin-top:2px;">${sevs.map(s => `<span class="badge" style="font-size:10px;padding:1px 5px;margin:1px;${s==='CRITICAL'?'background:var(--error);color:white;':s==='HIGH'?'background:var(--warning);color:#000;':''}">${s}</span>`).join('')}</div>`;
+        } else {
+            triggerHtml = '<span style="color:var(--text-dim);font-size:11px;">Manual</span>';
+        }
+
+        const enabledToggle = pb.enabled
+            ? `<span style="color:var(--green);cursor:pointer;" onclick="togglePlaybookEnabled('${pb.id}')" title="Click to disable">● On</span>`
+            : `<span style="color:var(--text-dim);cursor:pointer;" onclick="togglePlaybookEnabled('${pb.id}')" title="Click to enable">○ Off</span>`;
+
+        const sourceLabel = pb.source || 'ui';
+        const sourceBadge = `<span style="font-size:10px;background:var(--bg-surface);padding:1px 5px;border-radius:4px;">${sourceLabel}</span>`;
+
+        return `<tr${!pb.enabled ? ' style="opacity:0.5;"' : ''}>
+            <td>
                 <strong>${pb.name || pb.id}</strong>
-                ${pb.approvalRequired ? '<span class="badge" style="background:var(--warning);color:#000;margin-left:8px;">APPROVAL</span>' : ''}
-                <div style="font-size:12px;color:var(--text-dim);margin-top:4px;">
-                    ID: <code>${pb.id}</code> &nbsp;|&nbsp; ${pb.steps} steps &nbsp;|&nbsp; Author: ${pb.author || 'unknown'}
+                <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">
+                    ${pb.description ? pb.description.substring(0, 80) + (pb.description.length > 80 ? '...' : '') : ''}
                 </div>
-                <div style="font-size:12px;color:var(--text-dim);margin-top:2px;">
-                    ${pb.description ? '<em>' + pb.description.substring(0, 120) + (pb.description.length > 120 ? '...' : '') + '</em>' : ''}
+            </td>
+            <td>${triggerHtml}</td>
+            <td style="text-align:center;">${pb.steps}</td>
+            <td style="text-align:center;">${pb.approvalRequired ? '<span class="badge" style="background:var(--warning);color:#000;">Yes</span>' : 'No'}</td>
+            <td style="text-align:center;">${enabledToggle}</td>
+            <td style="text-align:center;">${sourceBadge}</td>
+            <td>
+                <div class="btn-group" style="flex-wrap:nowrap;">
+                    <button class="btn btn-sm btn-secondary" onclick="editPlaybook('${pb.id}')" title="Edit">Edit</button>
+                    <button class="btn btn-sm btn-secondary" onclick="viewPlaybook('${pb.id}')" title="View details">View</button>
+                    <button class="btn btn-sm btn-secondary" onclick="dryRunPlaybook('${pb.id}')" title="Dry run">Dry</button>
+                    <button class="btn btn-sm" style="background:var(--error);color:white;" onclick="deletePlaybook('${pb.id}', '${(pb.name||'').replace(/'/g,'&#39;')}')">Del</button>
                 </div>
-                <div style="margin-top:4px;">${tags}</div>
-            </div>
-            <div class="btn-group">
-                <button class="btn btn-sm btn-secondary" onclick="viewPlaybook('${pb.id}')">View</button>
-                <button class="btn btn-sm btn-secondary" onclick="dryRunPlaybook('${pb.id}')">Dry Run</button>
-                <button class="btn btn-sm" style="background:var(--error);color:white;" onclick="deletePlaybook('${pb.id}', '${(pb.name||'').replace(/'/g, '')}')">Delete</button>
-            </div>
-        </div>`;
+            </td>
+        </tr>`;
     }).join('');
     // Also load suggestions
     loadSuggestions();
@@ -1365,9 +1429,75 @@ async function viewPlaybook(id) {
     });
     if (pb.triggers && pb.triggers.length > 0) {
         details += `Triggers:\n`;
-        pb.triggers.forEach(t => details += `  - ${t.type}: service=${t.service || '*'}, severity=${t.severity || '*'}\n`);
+        pb.triggers.forEach(t => {
+            const sevs = (t.severities && t.severities.length > 0) ? t.severities.join(',') : (t.severity || '*');
+            details += `  - ${t.type}: service=${t.service || '*'}, severities=${sevs}\n`;
+        });
     }
     alert(details);
+}
+
+async function editPlaybook(id) {
+    const pb = await api(`/api/playbooks/${id}`);
+    if (!pb) { alert('Playbook not found'); return; }
+
+    // Set modal to edit mode
+    document.getElementById('pb-modal-title').textContent = 'Edit Playbook';
+    document.getElementById('pb-edit-id').value = id;
+    document.getElementById('pb-name').value = pb.name || '';
+    document.getElementById('pb-description').value = pb.description || '';
+    document.getElementById('pb-author').value = pb.author || 'user';
+    document.getElementById('pb-tags').value = (pb.tags || []).join(', ');
+    document.getElementById('pb-approval').checked = pb.approvalRequired || false;
+
+    // Enabled checkbox — need to fetch from the list endpoint since the Playbook POJO doesn't have enabled
+    // We'll default to checked; the toggle is on the table row anyway
+    document.getElementById('pb-enabled').checked = true;
+
+    // Triggers
+    if (pb.triggers && pb.triggers.length > 0) {
+        const t = pb.triggers[0];
+        document.getElementById('pb-trigger-type').value = t.type || 'service_unhealthy';
+        document.getElementById('pb-trigger-service').value = t.service || '';
+
+        // Clear all severity checkboxes, then set
+        document.querySelectorAll('.pb-sev-cb').forEach(cb => cb.checked = false);
+        const sevs = (t.severities && t.severities.length > 0) ? t.severities : (t.severity ? [t.severity] : []);
+        sevs.forEach(s => {
+            const cb = document.querySelector(`.pb-sev-cb[value="${s}"]`);
+            if (cb) cb.checked = true;
+        });
+    } else {
+        document.getElementById('pb-trigger-type').value = 'service_unhealthy';
+        document.getElementById('pb-trigger-service').value = '';
+        document.querySelectorAll('.pb-sev-cb').forEach(cb => cb.checked = false);
+    }
+
+    // Steps
+    const stepsContainer = document.getElementById('pb-steps-list');
+    stepsContainer.innerHTML = '';
+    pbStepCounter = 0;
+    if (pb.steps && pb.steps.length > 0) {
+        for (const step of pb.steps) {
+            addPlaybookStep();
+            const stepEl = stepsContainer.lastElementChild;
+            stepEl.querySelector('.pb-step-name').value = step.name || '';
+            stepEl.querySelector('.pb-step-tool').value = step.tool || 'health_check';
+            stepEl.querySelector('.pb-step-params').value = step.parameters ? JSON.stringify(step.parameters) : '';
+            stepEl.querySelector('.pb-step-onfailure').value = step.onFailure || 'continue';
+        }
+    }
+
+    openModal('create-playbook-modal');
+}
+
+async function togglePlaybookEnabled(id) {
+    const res = await api(`/api/playbooks/${id}/toggle`, { method: 'PATCH' });
+    if (res && res.id) {
+        loadPlaybooks();
+    } else {
+        alert('Failed to toggle playbook: ' + (res ? JSON.stringify(res) : 'Unknown error'));
+    }
 }
 
 async function deletePlaybook(id, name) {
@@ -1392,7 +1522,13 @@ async function dryRunPlaybook(id) {
     if (res) alert(res.result || JSON.stringify(res));
 }
 
-// ─── Playbook Form (Create Modal) ───
+function openPlaybookModal() {
+    resetPlaybookForm();
+    document.getElementById('pb-modal-title').textContent = 'Create Playbook';
+    openModal('create-playbook-modal');
+}
+
+// ─── Playbook Form (Create/Edit Modal) ───
 let pbStepCounter = 0;
 function addPlaybookStep() {
     const container = document.getElementById('pb-steps-list');
@@ -1446,18 +1582,25 @@ function removePlaybookStep(stepId) {
 }
 
 function resetPlaybookForm() {
+    document.getElementById('pb-edit-id').value = '';
     document.getElementById('pb-name').value = '';
     document.getElementById('pb-description').value = '';
     document.getElementById('pb-tags').value = '';
     document.getElementById('pb-author').value = 'user';
     document.getElementById('pb-approval').checked = false;
+    document.getElementById('pb-enabled').checked = true;
+    document.getElementById('pb-trigger-type').value = 'service_unhealthy';
     document.getElementById('pb-trigger-service').value = '';
-    document.getElementById('pb-trigger-severity').value = '';
+    // Reset severity checkboxes to default (HIGH + CRITICAL)
+    document.querySelectorAll('.pb-sev-cb').forEach(cb => {
+        cb.checked = (cb.value === 'HIGH' || cb.value === 'CRITICAL');
+    });
     document.getElementById('pb-steps-list').innerHTML = '';
     pbStepCounter = 0;
 }
 
 async function savePlaybook() {
+    const editId = document.getElementById('pb-edit-id').value;
     const name = document.getElementById('pb-name').value.trim();
     if (!name) { alert('Playbook name is required'); return; }
 
@@ -1481,24 +1624,42 @@ async function savePlaybook() {
     const tagsStr = document.getElementById('pb-tags').value.trim();
     const tags = tagsStr ? tagsStr.split(',').map(t => t.trim()).filter(t => t) : [];
     const approvalRequired = document.getElementById('pb-approval').checked;
+    const triggerType = document.getElementById('pb-trigger-type').value;
     const triggerService = document.getElementById('pb-trigger-service').value.trim();
-    const triggerSeverity = document.getElementById('pb-trigger-severity').value;
     const description = document.getElementById('pb-description').value.trim();
     const author = document.getElementById('pb-author').value.trim() || 'user';
 
+    // Collect multi-severity checkboxes
+    const selectedSeverities = [];
+    document.querySelectorAll('.pb-sev-cb:checked').forEach(cb => selectedSeverities.push(cb.value));
+
     const triggers = [];
-    if (triggerService || triggerSeverity) {
-        triggers.push({ type: 'service_unhealthy', service: triggerService || '*', severity: triggerSeverity || '*' });
+    if (triggerType !== 'manual') {
+        triggers.push({
+            type: triggerType,
+            service: triggerService || '*',
+            severities: selectedSeverities.length > 0 ? selectedSeverities : ['*']
+        });
     }
 
     const playbook = { name, description, author, steps, tags, approvalRequired, triggers, maxExecutionTimeSeconds: 300 };
 
-    const res = await api('/api/playbooks', {
-        method: 'POST',
-        body: JSON.stringify(playbook)
-    });
+    let res;
+    if (editId) {
+        // Update existing playbook
+        res = await api(`/api/playbooks/${editId}`, {
+            method: 'PUT',
+            body: JSON.stringify(playbook)
+        });
+    } else {
+        // Create new playbook
+        res = await api('/api/playbooks', {
+            method: 'POST',
+            body: JSON.stringify(playbook)
+        });
+    }
 
-    if (res && res.id) {
+    if (res && (res.id || res.message)) {
         closeModal('create-playbook-modal');
         resetPlaybookForm();
         loadPlaybooks();
