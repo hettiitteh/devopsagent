@@ -4,6 +4,7 @@ import com.example.devopsagent.domain.Incident;
 import com.example.devopsagent.memory.IncidentKnowledgeBase;
 import com.example.devopsagent.notification.NotificationService;
 import com.example.devopsagent.repository.IncidentRepository;
+import com.example.devopsagent.service.RcaService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -23,6 +24,7 @@ public class IncidentController {
     private final IncidentRepository incidentRepository;
     private final IncidentKnowledgeBase knowledgeBase;
     private final NotificationService notificationService;
+    private final RcaService rcaService;
 
     /**
      * List all incidents.
@@ -117,7 +119,16 @@ public class IncidentController {
                     if (body.containsKey("root_cause")) {
                         incident.setRootCause(body.get("root_cause"));
                     }
-                    return ResponseEntity.ok(incidentRepository.save(incident));
+                    Incident saved = incidentRepository.save(incident);
+
+                    // Generate RCA asynchronously
+                    try {
+                        rcaService.generateRca(saved);
+                    } catch (Exception e) {
+                        // Don't fail the resolve if RCA generation fails
+                    }
+
+                    return ResponseEntity.ok(saved);
                 })
                 .orElse(ResponseEntity.notFound().build());
     }

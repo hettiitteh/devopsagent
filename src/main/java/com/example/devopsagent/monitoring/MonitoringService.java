@@ -9,10 +9,11 @@ import com.example.devopsagent.repository.IncidentRepository;
 import com.example.devopsagent.repository.MonitoredServiceRepository;
 import com.example.devopsagent.service.AuditService;
 import com.example.devopsagent.service.LearningService;
+import com.example.devopsagent.service.RcaService;
 import io.micrometer.core.instrument.Counter;
+import org.springframework.context.annotation.Lazy;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -39,7 +40,6 @@ import java.util.concurrent.TimeUnit;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class MonitoringService {
 
     private final MonitoredServiceRepository serviceRepository;
@@ -51,6 +51,29 @@ public class MonitoringService {
     private final PlaybookEngine playbookEngine;
     private final AuditService auditService;
     private final LearningService learningService;
+    private final RcaService rcaService;
+
+    public MonitoringService(MonitoredServiceRepository serviceRepository,
+                             IncidentRepository incidentRepository,
+                             AgentProperties properties,
+                             OkHttpClient httpClient,
+                             GatewayWebSocketHandler gatewayHandler,
+                             MeterRegistry meterRegistry,
+                             PlaybookEngine playbookEngine,
+                             AuditService auditService,
+                             LearningService learningService,
+                             @Lazy RcaService rcaService) {
+        this.serviceRepository = serviceRepository;
+        this.incidentRepository = incidentRepository;
+        this.properties = properties;
+        this.httpClient = httpClient;
+        this.gatewayHandler = gatewayHandler;
+        this.meterRegistry = meterRegistry;
+        this.playbookEngine = playbookEngine;
+        this.auditService = auditService;
+        this.learningService = learningService;
+        this.rcaService = rcaService;
+    }
 
     // Health check history for anomaly detection
     private final Map<String, List<HealthCheckResult>> healthHistory = new ConcurrentHashMap<>();
@@ -328,6 +351,13 @@ public class MonitoringService {
                             resolutionTimeMs);
                 } catch (Exception e) {
                     log.warn("Failed to record auto-recovery for learning: {}", e.getMessage());
+                }
+
+                // Generate RCA asynchronously for the resolved incident
+                try {
+                    rcaService.generateRca(incident);
+                } catch (Exception e) {
+                    log.warn("Failed to trigger RCA generation for incident {}: {}", incident.getId(), e.getMessage());
                 }
             }
         }

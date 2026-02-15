@@ -261,6 +261,7 @@
                 <div class="nav-item" data-page="approvals"><span class="icon">✋</span> Approvals <span class="badge" id="approval-badge" style="display:none">0</span></div>
                 <div class="nav-item" data-page="alerts"><span class="icon">🔔</span> Alert Rules</div>
                 <div class="nav-item" data-page="playbooks"><span class="icon">📋</span> Playbooks <span class="badge" id="suggestion-badge" style="display:none">0</span></div>
+                <div class="nav-item" data-page="rca"><span class="icon">📄</span> RCA Reports <span class="badge" id="rca-badge" style="display:none">0</span></div>
             </div>
             <div class="nav-section">
                 <div class="nav-section-title">System</div>
@@ -622,6 +623,38 @@
             <div id="security-findings"><div class="empty-state">Click "Run Audit" to check your configuration</div></div>
         </div>
 
+        <!-- RCA Reports -->
+        <div class="page" id="page-rca">
+            <div class="page-header">
+                <h2>RCA Reports</h2>
+                <p>Root Cause Analysis reports generated after incident resolution — review, edit, and approve</p>
+            </div>
+            <div class="stat-grid" id="rca-stats">
+                <div class="stat-card"><div class="stat-icon blue">📄</div><div><div class="stat-value" id="rca-stat-total">0</div><div class="stat-label">Total RCAs</div></div></div>
+                <div class="stat-card"><div class="stat-icon yellow">⏳</div><div><div class="stat-value" id="rca-stat-pending">0</div><div class="stat-label">Pending Review</div></div></div>
+                <div class="stat-card"><div class="stat-icon green">✅</div><div><div class="stat-value" id="rca-stat-approved">0</div><div class="stat-label">Approved</div></div></div>
+                <div class="stat-card"><div class="stat-icon red">❌</div><div><div class="stat-value" id="rca-stat-rejected">0</div><div class="stat-label">Rejected</div></div></div>
+            </div>
+            <div class="btn-group" style="margin-bottom:16px;">
+                <button class="btn btn-secondary" onclick="loadRcaReports()">↻ Refresh</button>
+                <select id="rca-filter-status" class="form-input" style="width:auto;display:inline-block;" onchange="loadRcaReports()">
+                    <option value="">All Statuses</option>
+                    <option value="PENDING_REVIEW">Pending Review</option>
+                    <option value="APPROVED">Approved</option>
+                    <option value="REJECTED">Rejected</option>
+                    <option value="GENERATING">Generating</option>
+                </select>
+            </div>
+            <div class="card">
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>Service</th><th>Incident</th><th>Severity</th><th>Status</th><th>Resolution Time</th><th>Generated</th><th>Actions</th></tr></thead>
+                        <tbody id="rca-table"><tr><td colspan="7" class="empty-state">Loading...</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
     </main>
 </div>
 
@@ -779,6 +812,55 @@
     </div>
 </div>
 
+<!-- RCA Review Modal -->
+<div class="modal-overlay" id="rca-review-modal">
+    <div class="modal" style="max-width:900px;">
+        <h3 id="rca-modal-title">RCA Report</h3>
+        <input type="hidden" id="rca-edit-id" value="">
+        <!-- Read-only incident header -->
+        <div style="display:flex;gap:16px;margin-bottom:16px;padding:12px;background:var(--bg-sidebar);border-radius:var(--radius);font-size:13px;">
+            <div><strong>Incident:</strong> <span id="rca-hdr-incident"></span></div>
+            <div><strong>Service:</strong> <span id="rca-hdr-service"></span></div>
+            <div><strong>Severity:</strong> <span id="rca-hdr-severity"></span></div>
+            <div><strong>Resolution Time:</strong> <span id="rca-hdr-time"></span></div>
+            <div><strong>Tools Used:</strong> <span id="rca-hdr-tools"></span></div>
+        </div>
+        <!-- Editable RCA sections -->
+        <div class="form-group"><label class="form-label">Executive Summary</label>
+            <textarea class="form-input" id="rca-summary" rows="3" placeholder="One-paragraph summary of what happened..."></textarea>
+        </div>
+        <div class="form-group"><label class="form-label">Timeline</label>
+            <textarea class="form-input" id="rca-timeline" rows="5" placeholder="Chronological event timeline..."></textarea>
+        </div>
+        <div class="form-group"><label class="form-label">Root Cause</label>
+            <textarea class="form-input" id="rca-rootcause" rows="4" placeholder="Identified root cause with technical details..."></textarea>
+        </div>
+        <div class="form-group"><label class="form-label">Impact</label>
+            <textarea class="form-input" id="rca-impact" rows="3" placeholder="Scope and user/business impact..."></textarea>
+        </div>
+        <div class="form-group"><label class="form-label">Resolution Steps</label>
+            <textarea class="form-input" id="rca-resolution" rows="4" placeholder="Steps taken to resolve the incident..."></textarea>
+        </div>
+        <div class="form-group"><label class="form-label">Lessons Learned</label>
+            <textarea class="form-input" id="rca-lessons" rows="3" placeholder="Key takeaways from this incident..."></textarea>
+        </div>
+        <div class="form-group"><label class="form-label">Preventive Measures</label>
+            <textarea class="form-input" id="rca-preventive" rows="3" placeholder="Action items to prevent recurrence..."></textarea>
+        </div>
+        <div class="form-group"><label class="form-label">Reviewer Notes (optional)</label>
+            <textarea class="form-input" id="rca-review-notes" rows="2" placeholder="Your comments or notes about this RCA..."></textarea>
+        </div>
+        <div id="rca-modal-status" style="margin-bottom:8px;font-size:13px;color:var(--text-secondary);"></div>
+        <div class="btn-group" style="margin-top:16px;justify-content:flex-end;">
+            <button class="btn btn-secondary" onclick="closeModal('rca-review-modal')">Close</button>
+            <button class="btn btn-secondary" id="rca-btn-regenerate" onclick="regenerateRca()" style="display:none;">Regenerate</button>
+            <button class="btn btn-danger" id="rca-btn-reject" onclick="rejectRca()" style="display:none;">Reject</button>
+            <button class="btn btn-primary" id="rca-btn-approve" onclick="approveRca()" style="display:none;">Approve</button>
+            <button class="btn btn-primary" id="rca-btn-save" onclick="saveRcaEdits()" style="display:none;">Save Edits</button>
+        </div>
+    </div>
+</div>
+
 <script>
 // ─── Config ───
 const API = '';
@@ -877,6 +959,16 @@ function handleBroadcast(msg) {
             if (p.tools_used && p.tools_used.length > 0) text += `\n\n🔧 Tools used: ${p.tools_used.join(', ')}`;
             appendChat('assistant', formatResponse(text));
         }
+    }
+    if (msg.method === 'rca.generated') {
+        loadRcaReports();
+        refreshRcaBadge();
+        const p = msg.params || {};
+        appendChat('system', `📄 RCA generated for incident <strong>${p.incident_title || p.incident_id || '?'}</strong> — <a href="#" onclick="event.preventDefault();document.querySelector('[data-page=rca]').click();openRcaModal('${p.rca_id}');">Review now</a>`);
+    }
+    if (msg.method === 'rca.approved') {
+        loadRcaReports();
+        refreshRcaBadge();
     }
 }
 
@@ -1075,6 +1167,7 @@ async function refreshIncidents() {
             <div class="btn-group" style="flex-wrap:nowrap;">
                 ${isActive && !i.acknowledgedAt ? `<button class="btn btn-sm btn-secondary" onclick="acknowledgeIncident('${i.id}')">Acknowledge</button>` : ''}
                 ${isActive ? `<button class="btn btn-sm btn-secondary" onclick="resolveIncident('${i.id}')">Resolve</button>` : ''}
+                ${!isActive ? `<button class="btn btn-sm btn-secondary" onclick="viewIncidentRca('${i.id}')">📄 RCA</button>` : ''}
             </div>
         </td>
     </tr>`;
@@ -1866,17 +1959,246 @@ async function runSecurityAudit() {
     }).join('');
 }
 
+// ─── RCA Reports ───
+async function loadRcaReports() {
+    const statusFilter = document.getElementById('rca-filter-status')?.value || '';
+    const url = statusFilter ? `/api/rca?status=${statusFilter}` : '/api/rca';
+    const rcas = await api(url);
+    const tbody = document.getElementById('rca-table');
+
+    if (!rcas || rcas.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No RCA reports yet. They are auto-generated when incidents are resolved.</td></tr>';
+        updateRcaStats([]);
+        return;
+    }
+
+    updateRcaStats(rcas);
+
+    tbody.innerHTML = rcas.map(r => {
+        const statusColor = r.status === 'APPROVED' ? 'green' : r.status === 'PENDING_REVIEW' ? 'yellow' : r.status === 'REJECTED' ? 'red' : 'blue';
+        const statusLabel = r.status === 'PENDING_REVIEW' ? 'Pending Review' : r.status;
+        const resTime = formatResTime(r.resolutionTimeMs);
+        return `<tr>
+            <td>${r.service || '-'}</td>
+            <td><strong>${r.incidentTitle || '-'}</strong></td>
+            <td><span class="badge-status badge-${(r.severity || 'info').toLowerCase()}">${r.severity || '-'}</span></td>
+            <td><span class="badge-status badge-${statusColor}">${statusLabel}</span></td>
+            <td style="font-size:12px;">${resTime}</td>
+            <td style="font-size:12px;color:var(--text-dim)">${r.generatedAt ? new Date(r.generatedAt).toLocaleString() : '-'}</td>
+            <td>
+                <div class="btn-group" style="flex-wrap:nowrap;">
+                    <button class="btn btn-sm btn-secondary" onclick="openRcaModal('${r.id}')">View</button>
+                    ${r.status === 'PENDING_REVIEW' ? `<button class="btn btn-sm btn-primary" onclick="quickApproveRca('${r.id}')">Approve</button>` : ''}
+                </div>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+function updateRcaStats(rcas) {
+    document.getElementById('rca-stat-total').textContent = rcas.length;
+    document.getElementById('rca-stat-pending').textContent = rcas.filter(r => r.status === 'PENDING_REVIEW').length;
+    document.getElementById('rca-stat-approved').textContent = rcas.filter(r => r.status === 'APPROVED').length;
+    document.getElementById('rca-stat-rejected').textContent = rcas.filter(r => r.status === 'REJECTED').length;
+}
+
+function formatResTime(ms) {
+    if (!ms || ms <= 0) return '-';
+    const s = Math.floor(ms / 1000);
+    if (s < 60) return s + 's';
+    const m = Math.floor(s / 60);
+    if (m < 60) return m + 'm ' + (s % 60) + 's';
+    const h = Math.floor(m / 60);
+    return h + 'h ' + (m % 60) + 'm';
+}
+
+async function refreshRcaBadge() {
+    try {
+        const data = await api('/api/rca/pending/count');
+        const badge = document.getElementById('rca-badge');
+        if (data && data.count > 0) {
+            badge.textContent = data.count;
+            badge.style.display = 'inline-block';
+        } else {
+            badge.style.display = 'none';
+        }
+    } catch (e) { /* ignore */ }
+}
+
+async function openRcaModal(rcaId) {
+    const rca = await api(`/api/rca/${rcaId}`);
+    if (!rca) { alert('RCA not found.'); return; }
+
+    document.getElementById('rca-edit-id').value = rca.id;
+    document.getElementById('rca-modal-title').textContent = 'RCA Report — ' + (rca.incidentTitle || 'Unknown Incident');
+
+    // Header
+    document.getElementById('rca-hdr-incident').textContent = rca.incidentTitle || rca.incidentId || '-';
+    document.getElementById('rca-hdr-service').textContent = rca.service || '-';
+    document.getElementById('rca-hdr-severity').textContent = rca.severity || '-';
+    document.getElementById('rca-hdr-time').textContent = formatResTime(rca.resolutionTimeMs);
+    try {
+        const tools = JSON.parse(rca.toolsUsed || '[]');
+        document.getElementById('rca-hdr-tools').textContent = tools.join(', ') || '-';
+    } catch(e) {
+        document.getElementById('rca-hdr-tools').textContent = rca.toolsUsed || '-';
+    }
+
+    // Editable fields
+    document.getElementById('rca-summary').value = rca.summary || '';
+    document.getElementById('rca-timeline').value = rca.timeline || '';
+    document.getElementById('rca-rootcause').value = rca.rootCause || '';
+    document.getElementById('rca-impact').value = rca.impact || '';
+    document.getElementById('rca-resolution').value = rca.resolution || '';
+    document.getElementById('rca-lessons').value = rca.lessonsLearned || '';
+    document.getElementById('rca-preventive').value = rca.preventiveMeasures || '';
+    document.getElementById('rca-review-notes').value = rca.reviewNotes || '';
+
+    // Show/hide buttons based on status
+    const isPending = rca.status === 'PENDING_REVIEW';
+    const isApproved = rca.status === 'APPROVED';
+    document.getElementById('rca-btn-approve').style.display = isPending ? '' : 'none';
+    document.getElementById('rca-btn-reject').style.display = isPending ? '' : 'none';
+    document.getElementById('rca-btn-regenerate').style.display = (isPending || rca.status === 'REJECTED') ? '' : 'none';
+    document.getElementById('rca-btn-save').style.display = (isPending || isApproved) ? '' : 'none';
+
+    // Status display
+    const statusText = rca.status === 'PENDING_REVIEW' ? '⏳ Pending Review' :
+                       rca.status === 'APPROVED' ? '✅ Approved' + (rca.reviewedBy ? ' by ' + rca.reviewedBy : '') :
+                       rca.status === 'REJECTED' ? '❌ Rejected' + (rca.reviewedBy ? ' by ' + rca.reviewedBy : '') :
+                       '⏳ ' + rca.status;
+    document.getElementById('rca-modal-status').textContent = statusText +
+        (rca.reviewedAt ? ' on ' + new Date(rca.reviewedAt).toLocaleString() : '');
+
+    // Enable/disable editing for approved RCAs
+    const editable = isPending || isApproved;
+    document.querySelectorAll('#rca-review-modal textarea').forEach(ta => ta.readOnly = !editable);
+
+    openModal('rca-review-modal');
+}
+
+function getRcaFormData() {
+    return {
+        summary: document.getElementById('rca-summary').value,
+        timeline: document.getElementById('rca-timeline').value,
+        rootCause: document.getElementById('rca-rootcause').value,
+        impact: document.getElementById('rca-impact').value,
+        resolution: document.getElementById('rca-resolution').value,
+        lessonsLearned: document.getElementById('rca-lessons').value,
+        preventiveMeasures: document.getElementById('rca-preventive').value,
+        reviewNotes: document.getElementById('rca-review-notes').value
+    };
+}
+
+async function approveRca() {
+    const id = document.getElementById('rca-edit-id').value;
+    if (!id) return;
+    const data = getRcaFormData();
+    data.reviewed_by = 'ui-user';
+    const res = await api(`/api/rca/${id}/approve`, {
+        method: 'POST',
+        body: JSON.stringify(data)
+    });
+    if (res && !res.error) {
+        closeModal('rca-review-modal');
+        loadRcaReports();
+        refreshRcaBadge();
+    } else {
+        alert('Failed to approve: ' + (res?.error || 'unknown error'));
+    }
+}
+
+async function quickApproveRca(id) {
+    const res = await api(`/api/rca/${id}/approve`, {
+        method: 'POST',
+        body: JSON.stringify({ reviewed_by: 'ui-user' })
+    });
+    if (res && !res.error) {
+        loadRcaReports();
+        refreshRcaBadge();
+    }
+}
+
+async function rejectRca() {
+    const id = document.getElementById('rca-edit-id').value;
+    if (!id) return;
+    const reason = prompt('Reason for rejection (optional):') || '';
+    const regen = confirm('Would you like to regenerate the RCA?');
+    const res = await api(`/api/rca/${id}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ reviewed_by: 'ui-user', reason: reason, regenerate: regen ? 'true' : 'false' })
+    });
+    if (res && !res.error) {
+        closeModal('rca-review-modal');
+        loadRcaReports();
+        refreshRcaBadge();
+    } else {
+        alert('Failed to reject: ' + (res?.error || 'unknown error'));
+    }
+}
+
+async function regenerateRca() {
+    const id = document.getElementById('rca-edit-id').value;
+    if (!id) return;
+    // First get the incident ID
+    const rca = await api(`/api/rca/${id}`);
+    if (!rca) return;
+    const res = await api(`/api/rca/generate/${rca.incidentId}`, { method: 'POST' });
+    if (res && !res.error) {
+        closeModal('rca-review-modal');
+        appendChat('system', '📄 RCA regeneration started. You will be notified when it is ready.');
+    } else {
+        alert('Failed to regenerate: ' + (res?.error || 'unknown error'));
+    }
+}
+
+async function saveRcaEdits() {
+    const id = document.getElementById('rca-edit-id').value;
+    if (!id) return;
+    const data = getRcaFormData();
+    const res = await api(`/api/rca/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data)
+    });
+    if (res && !res.error) {
+        alert('RCA edits saved.');
+        loadRcaReports();
+    } else {
+        alert('Failed to save: ' + (res?.error || 'unknown error'));
+    }
+}
+
+async function viewIncidentRca(incidentId) {
+    const rca = await api(`/api/rca/incident/${incidentId}`);
+    if (rca && rca.id) {
+        document.querySelector('[data-page=rca]').click();
+        openRcaModal(rca.id);
+    } else {
+        // No RCA yet — offer to generate
+        if (confirm('No RCA exists for this incident yet. Generate one now?')) {
+            const res = await api(`/api/rca/generate/${incidentId}`, { method: 'POST' });
+            if (res && !res.error) {
+                alert('RCA generation started. You will be notified when it is ready.');
+            } else {
+                alert('Failed to generate: ' + (res?.error || 'unknown error'));
+            }
+        }
+    }
+}
+
 // ─── Init ───
 connectWs();
 refreshDashboard();
 setTimeout(() => {
     loadTools(); refreshServices(); refreshIncidents(); refreshAlerts();
     loadPlaybooks(); refreshApprovals(); refreshAuditLog(); refreshInsights(); loadLearnings();
+    loadRcaReports(); refreshRcaBadge();
 }, 500);
 setInterval(refreshDashboard, 15000);
 setInterval(refreshApprovals, 30000);
 setInterval(refreshInsights, 60000);
 setInterval(loadSuggestions, 120000);
+setInterval(refreshRcaBadge, 30000);
 </script>
 </body>
 </html>
