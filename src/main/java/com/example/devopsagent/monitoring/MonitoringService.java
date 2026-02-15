@@ -1,5 +1,7 @@
 package com.example.devopsagent.monitoring;
 
+import com.example.devopsagent.agent.AgentMessage;
+import com.example.devopsagent.agent.LlmClient;
 import com.example.devopsagent.config.AgentProperties;
 import com.example.devopsagent.domain.Incident;
 import com.example.devopsagent.domain.MonitoredService;
@@ -10,6 +12,8 @@ import com.example.devopsagent.repository.MonitoredServiceRepository;
 import com.example.devopsagent.service.AuditService;
 import com.example.devopsagent.service.LearningService;
 import com.example.devopsagent.service.RcaService;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.Counter;
 import org.springframework.context.annotation.Lazy;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -23,6 +27,9 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -52,6 +59,8 @@ public class MonitoringService {
     private final AuditService auditService;
     private final LearningService learningService;
     private final RcaService rcaService;
+    private final LlmClient llmClient;
+    private final ObjectMapper objectMapper;
 
     public MonitoringService(MonitoredServiceRepository serviceRepository,
                              IncidentRepository incidentRepository,
@@ -62,7 +71,9 @@ public class MonitoringService {
                              PlaybookEngine playbookEngine,
                              AuditService auditService,
                              LearningService learningService,
-                             @Lazy RcaService rcaService) {
+                             @Lazy RcaService rcaService,
+                             @Lazy LlmClient llmClient,
+                             ObjectMapper objectMapper) {
         this.serviceRepository = serviceRepository;
         this.incidentRepository = incidentRepository;
         this.properties = properties;
@@ -73,6 +84,8 @@ public class MonitoringService {
         this.auditService = auditService;
         this.learningService = learningService;
         this.rcaService = rcaService;
+        this.llmClient = llmClient;
+        this.objectMapper = objectMapper;
     }
 
     // Health check history for anomaly detection
@@ -279,24 +292,34 @@ public class MonitoringService {
     private void onServiceUnhealthy(MonitoredService service, HealthCheckResult result) {
         String incidentId = null;
 
+        // Use LLM to classify severity instead of hardcoding HIGH
+        Incident.Severity classifiedSeverity = classifyIncidentSeverity(service, result);
+        String triageReasoning = lastTriageReasoning; // captured by classifyIncidentSeverity
+
         if (properties.getIncidents().isAutoCreate()) {
+            String description = String.format(
+                    "Service %s is reporting unhealthy status.\nDetails: %s\nConsecutive failures: %d",
+                    service.getName(), result.message(), service.getConsecutiveFailures());
+            if (triageReasoning != null && !triageReasoning.isEmpty()) {
+                description += "\n\nLLM Triage Reasoning: " + triageReasoning;
+            }
+
             Incident incident = Incident.builder()
                     .title("Service unhealthy: " + service.getName())
-                    .description(String.format(
-                            "Service %s is reporting unhealthy status.\nDetails: %s\nConsecutive failures: %d",
-                            service.getName(), result.message(), service.getConsecutiveFailures()))
-                    .severity(Incident.Severity.HIGH)
+                    .description(description)
+                    .severity(classifiedSeverity)
                     .status(Incident.IncidentStatus.OPEN)
                     .service(service.getName())
                     .source("monitoring-service")
                     .build();
             incidentRepository.save(incident);
             incidentId = incident.getId();
-            log.info("Auto-created incident {} for unhealthy service: {}", incidentId, service.getName());
+            log.info("Auto-created incident {} for unhealthy service: {} (severity: {}, reason: {})",
+                    incidentId, service.getName(), classifiedSeverity, triageReasoning);
 
             // Audit: incident created
             auditService.log("monitoring", "INCIDENT_CREATED", incidentId,
-                    Map.of("service", service.getName(), "severity", "HIGH",
+                    Map.of("service", service.getName(), "severity", classifiedSeverity.name(),
                            "message", result.message()));
 
             // Broadcast incident via gateway
@@ -308,16 +331,84 @@ public class MonitoringService {
             ));
         }
 
-        // Auto-trigger matching playbooks
+        // Auto-trigger matching playbooks with the classified severity
         try {
             playbookEngine.autoTriggerPlaybooks(
                     service.getName(),
-                    Incident.Severity.HIGH.name(),
+                    classifiedSeverity.name(),
                     incidentId
             );
         } catch (Exception e) {
             log.error("Failed to auto-trigger playbooks for service {}: {}", service.getName(), e.getMessage());
         }
+    }
+
+    // Temporary holder for the last triage reasoning (set by classifyIncidentSeverity)
+    private volatile String lastTriageReasoning;
+
+    /**
+     * Use the LLM to intelligently classify incident severity based on context,
+     * instead of hardcoding every incident as HIGH.
+     * Falls back to HIGH if the LLM call fails.
+     */
+    private Incident.Severity classifyIncidentSeverity(MonitoredService service, HealthCheckResult result) {
+        lastTriageReasoning = null;
+        try {
+            // Gather context for triage
+            Instant thirtyDaysAgo = Instant.now().minus(30, ChronoUnit.DAYS);
+            long recentIncidentCount = incidentRepository.countIncidentsByServiceSince(
+                    service.getName(), thirtyDaysAgo);
+            double successRate = learningService.getSuccessRate(service.getName());
+            String timeOfDay = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm z")
+                    .format(Instant.now().atZone(ZoneId.systemDefault()));
+
+            String prompt = String.format("""
+                    You are triaging a service health incident. Classify its severity.
+                    
+                    Service: %s (type: %s)
+                    Error: %s
+                    Consecutive failures: %d
+                    Time: %s
+                    Past incidents for this service (30d): %d
+                    Historical auto-resolution success rate: %.1f%%
+                    
+                    Classify as:
+                    - CRITICAL: Service is completely down, data loss risk, user-facing impact
+                    - HIGH: Service degraded, significant performance impact
+                    - MEDIUM: Non-critical service issue, potential future impact
+                    - LOW: Minor issue, transient, no immediate user impact
+                    
+                    Respond ONLY with JSON: {"severity": "...", "reasoning": "..."}
+                    """,
+                    service.getName(), service.getType(),
+                    result.message(), service.getConsecutiveFailures(),
+                    timeOfDay, recentIncidentCount, successRate);
+
+            List<AgentMessage> messages = List.of(
+                    AgentMessage.system(prompt),
+                    AgentMessage.user("Classify this incident now.")
+            );
+            AgentMessage response = llmClient.chat(messages, List.of());
+            String content = response.getContent();
+
+            if (content != null && !content.isBlank()) {
+                // Strip markdown fences if present
+                content = content.trim();
+                if (content.startsWith("```")) {
+                    content = content.replaceFirst("```(?:json)?\\s*", "").replaceFirst("\\s*```$", "");
+                }
+                JsonNode node = objectMapper.readTree(content);
+                String severityStr = node.has("severity") ? node.get("severity").asText().toUpperCase() : "HIGH";
+                lastTriageReasoning = node.has("reasoning") ? node.get("reasoning").asText() : null;
+
+                Incident.Severity classified = Incident.Severity.valueOf(severityStr);
+                log.info("LLM triage for {}: {} -- {}", service.getName(), classified, lastTriageReasoning);
+                return classified;
+            }
+        } catch (Exception e) {
+            log.warn("LLM triage failed for {}, falling back to HIGH: {}", service.getName(), e.getMessage());
+        }
+        return Incident.Severity.HIGH;
     }
 
     private void onServiceRecovered(MonitoredService service) {

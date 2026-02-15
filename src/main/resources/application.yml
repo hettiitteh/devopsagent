@@ -139,6 +139,11 @@ devops-agent:
   suggestions:
     ai-enabled: true
 
+  # Proactive risk analysis (LLM-driven)
+  proactive-analysis:
+    enabled: true
+    interval-minutes: 30
+
   # Security settings
   security:
     audit-enabled: true

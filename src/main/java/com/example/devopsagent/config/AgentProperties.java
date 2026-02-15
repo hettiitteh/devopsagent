@@ -28,6 +28,7 @@ public class AgentProperties {
     private NotificationConfig notifications = new NotificationConfig();
     private SecurityConfig security = new SecurityConfig();
     private SuggestionsConfig suggestions = new SuggestionsConfig();
+    private ProactiveAnalysisConfig proactiveAnalysis = new ProactiveAnalysisConfig();
 
     @Data
     public static class GatewayConfig {
@@ -121,6 +122,12 @@ public class AgentProperties {
     @Data
     public static class SuggestionsConfig {
         private boolean aiEnabled = true;
+    }
+
+    @Data
+    public static class ProactiveAnalysisConfig {
+        private boolean enabled = true;
+        private int intervalMinutes = 30;
     }
 
     @Data

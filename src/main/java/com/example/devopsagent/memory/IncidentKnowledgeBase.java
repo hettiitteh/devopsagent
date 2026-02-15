@@ -1,9 +1,12 @@
 package com.example.devopsagent.memory;
 
+import com.example.devopsagent.agent.AgentMessage;
+import com.example.devopsagent.agent.LlmClient;
 import com.example.devopsagent.domain.Incident;
 import com.example.devopsagent.repository.IncidentRepository;
 import com.example.devopsagent.service.LearningService;
-import lombok.RequiredArgsConstructor;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
@@ -31,15 +34,22 @@ public class IncidentKnowledgeBase {
 
     private final IncidentRepository incidentRepository;
     private final LearningService learningService;
+    private final LlmClient llmClient;
+    private final ObjectMapper objectMapper;
 
     public IncidentKnowledgeBase(IncidentRepository incidentRepository,
-                                  @Lazy LearningService learningService) {
+                                  @Lazy LearningService learningService,
+                                  @Lazy LlmClient llmClient,
+                                  ObjectMapper objectMapper) {
         this.incidentRepository = incidentRepository;
         this.learningService = learningService;
+        this.llmClient = llmClient;
+        this.objectMapper = objectMapper;
     }
 
     /**
-     * Search for similar past incidents based on keywords.
+     * Search for similar past incidents based on keywords, enhanced with LLM
+     * query expansion and relevance ranking.
      */
     public List<Incident> searchSimilarIncidents(String query, String service) {
         List<Incident> allIncidents = service != null
@@ -53,10 +63,11 @@ public class IncidentKnowledgeBase {
                     .collect(Collectors.toList());
         }
 
-        // Simple keyword matching (in production, use vector search)
-        String[] keywords = query.toLowerCase().split("\\s+");
+        // Step 1: Expand query with LLM for better recall
+        List<String> expandedTerms = expandSearchQuery(query);
 
-        return allIncidents.stream()
+        // Step 2: Filter using expanded keywords (broader recall)
+        List<Incident> filtered = allIncidents.stream()
                 .filter(incident -> {
                     String searchText = String.join(" ",
                             incident.getTitle() != null ? incident.getTitle() : "",
@@ -65,11 +76,116 @@ public class IncidentKnowledgeBase {
                             incident.getResolution() != null ? incident.getResolution() : ""
                     ).toLowerCase();
 
-                    return Arrays.stream(keywords).anyMatch(searchText::contains);
+                    return expandedTerms.stream().anyMatch(searchText::contains);
                 })
                 .sorted(Comparator.comparing(Incident::getCreatedAt).reversed())
-                .limit(10)
+                .limit(20) // broader initial set for ranking
                 .collect(Collectors.toList());
+
+        // Step 3: Rank by relevance using LLM (better precision)
+        return rankByRelevance(query, filtered);
+    }
+
+    /**
+     * Use LLM to expand a search query with synonyms, related technical terms,
+     * and common variations for better recall.
+     */
+    private List<String> expandSearchQuery(String query) {
+        try {
+            String prompt = String.format("""
+                    Expand this incident search query with synonyms, related technical terms, \
+                    and common variations. Include the original terms plus expansions.
+                    
+                    Query: %s
+                    
+                    Respond ONLY with a JSON array of 10-15 lowercase search terms. Example:
+                    ["database", "db", "connection refused", "mysql", "pool exhausted", "timeout"]
+                    """, query);
+
+            List<AgentMessage> messages = List.of(
+                    AgentMessage.system(prompt),
+                    AgentMessage.user("Expand this query now.")
+            );
+            AgentMessage response = llmClient.chat(messages, List.of());
+            String content = response.getContent();
+
+            if (content != null && !content.isBlank()) {
+                content = content.trim();
+                if (content.startsWith("```")) {
+                    content = content.replaceFirst("```(?:json)?\\s*", "").replaceFirst("\\s*```$", "");
+                }
+                List<String> terms = objectMapper.readValue(content, new TypeReference<List<String>>() {});
+                log.debug("LLM expanded query '{}' to {} terms: {}", query, terms.size(), terms);
+                return terms.stream().map(String::toLowerCase).collect(Collectors.toList());
+            }
+        } catch (Exception e) {
+            log.warn("LLM query expansion failed for '{}', falling back to keyword split: {}", query, e.getMessage());
+        }
+        // Fallback: original keyword split
+        return Arrays.asList(query.toLowerCase().split("\\s+"));
+    }
+
+    /**
+     * Use LLM to rank incident search results by relevance to the query.
+     * Only invoked when there are more than 5 candidates, to save LLM calls.
+     */
+    private List<Incident> rankByRelevance(String query, List<Incident> candidates) {
+        if (candidates.size() <= 5) {
+            return candidates;
+        }
+
+        try {
+            StringBuilder candidateList = new StringBuilder();
+            for (int i = 0; i < candidates.size(); i++) {
+                Incident inc = candidates.get(i);
+                candidateList.append(String.format("%d. [%s] %s — %s (root cause: %s)\n",
+                        i + 1, inc.getId(), inc.getTitle(),
+                        inc.getDescription() != null ? inc.getDescription().substring(0, Math.min(100, inc.getDescription().length())) : "N/A",
+                        inc.getRootCause() != null ? inc.getRootCause() : "unknown"));
+            }
+
+            String prompt = String.format("""
+                    Rank these incidents by relevance to the query: "%s"
+                    
+                    Candidates:
+                    %s
+                    
+                    Return the top 10 most relevant incidents as a JSON array of their 1-based index numbers, \
+                    ordered from most to least relevant.
+                    Example: [3, 1, 7, 2, 5]
+                    Respond ONLY with the JSON array.
+                    """, query, candidateList);
+
+            List<AgentMessage> messages = List.of(
+                    AgentMessage.system(prompt),
+                    AgentMessage.user("Rank these incidents now.")
+            );
+            AgentMessage response = llmClient.chat(messages, List.of());
+            String content = response.getContent();
+
+            if (content != null && !content.isBlank()) {
+                content = content.trim();
+                if (content.startsWith("```")) {
+                    content = content.replaceFirst("```(?:json)?\\s*", "").replaceFirst("\\s*```$", "");
+                }
+                List<Integer> rankedIndices = objectMapper.readValue(content, new TypeReference<List<Integer>>() {});
+                List<Incident> ranked = new ArrayList<>();
+                Set<Integer> seen = new HashSet<>();
+                for (int idx : rankedIndices) {
+                    int zeroIdx = idx - 1;
+                    if (zeroIdx >= 0 && zeroIdx < candidates.size() && seen.add(zeroIdx)) {
+                        ranked.add(candidates.get(zeroIdx));
+                    }
+                    if (ranked.size() >= 10) break;
+                }
+                log.debug("LLM ranked {} candidates for query '{}' → top {}", candidates.size(), query, ranked.size());
+                return ranked;
+            }
+        } catch (Exception e) {
+            log.warn("LLM relevance ranking failed for '{}', using chronological order: {}", query, e.getMessage());
+        }
+        // Fallback: return top 10 by recency
+        return candidates.stream().limit(10).collect(Collectors.toList());
     }
 
     /**

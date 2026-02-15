@@ -262,6 +262,7 @@
                 <div class="nav-item" data-page="alerts"><span class="icon">🔔</span> Alert Rules</div>
                 <div class="nav-item" data-page="playbooks"><span class="icon">📋</span> Playbooks <span class="badge" id="suggestion-badge" style="display:none">0</span></div>
                 <div class="nav-item" data-page="rca"><span class="icon">📄</span> RCA Reports <span class="badge" id="rca-badge" style="display:none">0</span></div>
+                <div class="nav-item" data-page="risks"><span class="icon">⚠️</span> Risk Assessment <span class="badge" id="risk-badge" style="display:none">0</span></div>
             </div>
             <div class="nav-section">
                 <div class="nav-section-title">System</div>
@@ -293,6 +294,7 @@
                 <div class="stat-card"><div class="stat-icon red">❌</div><div><div class="stat-value" id="stat-unhealthy">-</div><div class="stat-label">Unhealthy Services</div></div></div>
                 <div class="stat-card"><div class="stat-icon yellow">⚠️</div><div><div class="stat-value" id="stat-incidents">-</div><div class="stat-label">Active Incidents</div></div></div>
                 <div class="stat-card"><div class="stat-icon blue">🔧</div><div><div class="stat-value" id="stat-tools">-</div><div class="stat-label">Available Tools</div></div></div>
+                <div class="stat-card"><div class="stat-icon yellow" style="background:rgba(251,191,36,.12);">⚠️</div><div><div class="stat-value" id="stat-risks">0</div><div class="stat-label">Open Risks</div></div></div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
                 <div class="card">
@@ -304,10 +306,18 @@
                     <div class="table-wrap"><table><thead><tr><th>Severity</th><th>Title</th><th>Service</th><th>Status</th></tr></thead><tbody id="dashboard-incidents"><tr><td colspan="4" class="empty-state">Loading...</td></tr></tbody></table></div>
                 </div>
             </div>
-            <div class="card" style="margin-top:16px;">
-                <div class="card-title">Resolution Insights (Learning)</div>
-                <div id="insights-container" style="font-size:13px;color:var(--text-dim);">
-                    <div class="empty-state">Loading insights...</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;">
+                <div class="card">
+                    <div class="card-title">Resolution Insights (Learning)</div>
+                    <div id="insights-container" style="font-size:13px;color:var(--text-dim);">
+                        <div class="empty-state">Loading insights...</div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Proactive Risks</div>
+                    <div id="dashboard-risks-container" style="font-size:13px;color:var(--text-dim);">
+                        <div class="empty-state">Loading risks...</div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -655,6 +665,38 @@
             </div>
         </div>
 
+        <!-- Risk Assessment Page -->
+        <div class="page" id="page-risks">
+            <div class="page-header">
+                <h2>Risk Assessment</h2>
+                <p>Proactive risk analysis powered by LLM — identifies emerging threats before they become incidents</p>
+            </div>
+            <div class="stat-grid" id="risk-stats">
+                <div class="stat-card"><div class="stat-icon yellow">⚠️</div><div><div class="stat-value" id="risk-stat-open">0</div><div class="stat-label">Open Risks</div></div></div>
+                <div class="stat-card"><div class="stat-icon blue">👁️</div><div><div class="stat-value" id="risk-stat-acknowledged">0</div><div class="stat-label">Acknowledged</div></div></div>
+                <div class="stat-card"><div class="stat-icon green">✅</div><div><div class="stat-value" id="risk-stat-mitigated">0</div><div class="stat-label">Mitigated</div></div></div>
+                <div class="stat-card"><div class="stat-icon red">🔴</div><div><div class="stat-value" id="risk-stat-critical">0</div><div class="stat-label">Critical/High</div></div></div>
+            </div>
+            <div class="btn-group" style="margin-bottom:16px;">
+                <button class="btn btn-primary" onclick="triggerRiskAnalysis()">🔍 Run Analysis Now</button>
+                <button class="btn btn-secondary" onclick="loadRisks()">↻ Refresh</button>
+                <select id="risk-filter-status" class="form-input" style="width:auto;display:inline-block;" onchange="loadRisks()">
+                    <option value="">All Statuses</option>
+                    <option value="OPEN">Open</option>
+                    <option value="ACKNOWLEDGED">Acknowledged</option>
+                    <option value="MITIGATED">Mitigated</option>
+                </select>
+            </div>
+            <div class="card">
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>Severity</th><th>Risk</th><th>Service</th><th>Category</th><th>Status</th><th>Identified</th><th>Actions</th></tr></thead>
+                        <tbody id="risk-table"><tr><td colspan="7" class="empty-state">Loading...</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
     </main>
 </div>
 
@@ -970,6 +1012,13 @@ function handleBroadcast(msg) {
         loadRcaReports();
         refreshRcaBadge();
     }
+    if (msg.method === 'risk.identified') {
+        loadRisks();
+        refreshRiskBadge();
+        loadDashboardRisks();
+        const p = msg.params || {};
+        appendChat('system', `⚠️ New risk identified: <strong>[${p.severity}]</strong> ${p.title || '?'} — Service: ${p.service || 'system-wide'}. <a href="#" onclick="event.preventDefault();document.querySelector('[data-page=risks]').click();">View risks</a>`);
+    }
 }
 
 // ─── Event Log ───
@@ -987,9 +1036,10 @@ function addEvent(method, data) {
 
 // ─── Dashboard ───
 async function refreshDashboard() {
-    const [status, incidents] = await Promise.all([
+    const [status, incidents, riskCounts] = await Promise.all([
         api('/api/gateway/status'),
-        api('/api/incidents/active')
+        api('/api/incidents/active'),
+        api('/api/risks/counts')
     ]);
     if (status) {
         const m = status.monitoring || {};
@@ -997,6 +1047,7 @@ async function refreshDashboard() {
         document.getElementById('stat-unhealthy').textContent = m.unhealthy ?? 0;
         document.getElementById('stat-incidents').textContent = status.incidents?.active ?? 0;
         document.getElementById('stat-tools').textContent = status.agent?.tools_registered ?? 0;
+        document.getElementById('stat-risks').textContent = riskCounts?.open ?? 0;
 
         const badge = document.getElementById('incident-badge');
         const activeCount = status.incidents?.active ?? 0;
@@ -2186,6 +2237,120 @@ async function viewIncidentRca(incidentId) {
     }
 }
 
+// ─── Risk Assessment ───
+async function loadRisks() {
+    const filter = document.getElementById('risk-filter-status')?.value || '';
+    const url = filter ? `/api/risks?status=${filter}` : '/api/risks';
+    const risks = await api(url);
+    const tbody = document.getElementById('risk-table');
+    if (!risks || !risks.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No risks found — system looks healthy!</td></tr>'; updateRiskStats([]); return; }
+    updateRiskStats(risks);
+    tbody.innerHTML = risks.map(r => {
+        const sevClass = r.severity === 'CRITICAL' ? 'red' : r.severity === 'HIGH' ? 'orange' : r.severity === 'MEDIUM' ? 'yellow' : 'blue';
+        const statusClass = r.status === 'OPEN' ? 'yellow' : r.status === 'ACKNOWLEDGED' ? 'blue' : 'green';
+        const time = r.createdAt ? new Date(r.createdAt).toLocaleString() : '-';
+        let actions = '';
+        if (r.status === 'OPEN') {
+            actions = `<button class="btn btn-secondary" style="padding:3px 8px;font-size:11px;" onclick="acknowledgeRisk('${r.id}')">Acknowledge</button>
+                       <button class="btn btn-primary" style="padding:3px 8px;font-size:11px;" onclick="mitigateRisk('${r.id}')">Mitigate</button>`;
+        } else if (r.status === 'ACKNOWLEDGED') {
+            actions = `<button class="btn btn-primary" style="padding:3px 8px;font-size:11px;" onclick="mitigateRisk('${r.id}')">Mitigate</button>`;
+        } else {
+            actions = '<span style="color:var(--green);">Mitigated</span>';
+        }
+        return `<tr>
+            <td><span class="severity-badge ${sevClass}">${r.severity}</span></td>
+            <td><strong>${r.riskTitle || ''}</strong><br><span style="font-size:11px;color:var(--text-dim);">${(r.description || '').substring(0, 100)}</span></td>
+            <td>${r.service || '<em>system-wide</em>'}</td>
+            <td><span style="font-size:11px;padding:2px 6px;border-radius:4px;background:var(--${statusClass}-bg);color:var(--${statusClass});">${r.category || '-'}</span></td>
+            <td><span style="font-size:11px;padding:2px 6px;border-radius:4px;background:var(--${statusClass}-bg);color:var(--${statusClass});">${r.status}</span></td>
+            <td style="font-size:11px;">${time}</td>
+            <td>${actions}</td>
+        </tr>`;
+    }).join('');
+}
+
+function updateRiskStats(risks) {
+    const open = risks.filter(r => r.status === 'OPEN').length;
+    const ack = risks.filter(r => r.status === 'ACKNOWLEDGED').length;
+    const mit = risks.filter(r => r.status === 'MITIGATED').length;
+    const critHigh = risks.filter(r => r.severity === 'CRITICAL' || r.severity === 'HIGH').length;
+    document.getElementById('risk-stat-open').textContent = open;
+    document.getElementById('risk-stat-acknowledged').textContent = ack;
+    document.getElementById('risk-stat-mitigated').textContent = mit;
+    document.getElementById('risk-stat-critical').textContent = critHigh;
+}
+
+async function refreshRiskBadge() {
+    try {
+        const counts = await api('/api/risks/counts');
+        const badge = document.getElementById('risk-badge');
+        const openCount = counts?.open || 0;
+        if (openCount > 0) { badge.style.display = ''; badge.textContent = openCount; }
+        else { badge.style.display = 'none'; }
+    } catch (e) { /* ignore */ }
+}
+
+async function acknowledgeRisk(id) {
+    await api(`/api/risks/${id}/acknowledge`, { method: 'POST', body: JSON.stringify({ user: 'operator' }) });
+    loadRisks();
+    refreshRiskBadge();
+}
+
+async function mitigateRisk(id) {
+    await api(`/api/risks/${id}/mitigate`, { method: 'POST', body: JSON.stringify({ user: 'operator' }) });
+    loadRisks();
+    refreshRiskBadge();
+    loadDashboardRisks();
+}
+
+async function triggerRiskAnalysis() {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = 'Analyzing...';
+    try {
+        const res = await api('/api/risks/analyze', { method: 'POST' });
+        if (res && res.new_risks !== undefined) {
+            alert(`Analysis complete. ${res.new_risks} new risk(s) identified.`);
+        }
+        loadRisks();
+        refreshRiskBadge();
+        loadDashboardRisks();
+    } catch (e) {
+        alert('Analysis failed: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🔍 Run Analysis Now';
+    }
+}
+
+async function loadDashboardRisks() {
+    const container = document.getElementById('dashboard-risks-container');
+    if (!container) return;
+    try {
+        const risks = await api('/api/risks/latest');
+        if (!risks || !risks.length) {
+            container.innerHTML = '<div class="empty-state">No risks identified — system looks healthy!</div>';
+            return;
+        }
+        const openRisks = risks.filter(r => r.status === 'OPEN');
+        if (openRisks.length === 0) {
+            container.innerHTML = '<div style="color:var(--green);">All risks have been addressed. ✅</div>';
+            return;
+        }
+        container.innerHTML = openRisks.slice(0, 5).map(r => {
+            const sevColor = r.severity === 'CRITICAL' ? 'var(--red)' : r.severity === 'HIGH' ? 'var(--orange)' : r.severity === 'MEDIUM' ? 'var(--yellow)' : 'var(--blue)';
+            return `<div style="padding:6px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">
+                <span style="color:${sevColor};font-weight:600;font-size:11px;min-width:55px;">${r.severity}</span>
+                <span style="flex:1;">${r.riskTitle}</span>
+                <span style="color:var(--text-dim);font-size:11px;">${r.service || 'system'}</span>
+            </div>`;
+        }).join('');
+    } catch (e) {
+        container.innerHTML = '<div class="empty-state">Failed to load risks</div>';
+    }
+}
+
 // ─── Init ───
 connectWs();
 refreshDashboard();
@@ -2193,12 +2358,14 @@ setTimeout(() => {
     loadTools(); refreshServices(); refreshIncidents(); refreshAlerts();
     loadPlaybooks(); refreshApprovals(); refreshAuditLog(); refreshInsights(); loadLearnings();
     loadRcaReports(); refreshRcaBadge();
+    loadRisks(); refreshRiskBadge(); loadDashboardRisks();
 }, 500);
 setInterval(refreshDashboard, 15000);
 setInterval(refreshApprovals, 30000);
 setInterval(refreshInsights, 60000);
 setInterval(loadSuggestions, 120000);
 setInterval(refreshRcaBadge, 30000);
+setInterval(() => { refreshRiskBadge(); loadDashboardRisks(); }, 60000);
 </script>
 </body>
 </html>
