@@ -1,0 +1,31 @@
+---
+id: "service-restart-playbook"
+name: "Service Restart Playbook"
+description: "Auto-suggested playbook based on 2 successful resolutions for service\
+  \ 'unknown'. Tool sequence: service_restart. Average resolution time: 10s."
+version: "1.0"
+author: "user"
+triggers:
+- type: "service_unhealthy"
+  service: "*"
+  severity: "*"
+steps:
+- order: 1
+  name: "service restart"
+  description: null
+  tool: "service_restart"
+  parameters:
+    service_type: "docker"
+    service_name: "${service_name}"
+    graceful: true
+  onFailure: "continue"
+  maxRetries: 0
+  retryDelaySeconds: 0
+  timeoutSeconds: 0
+  condition: null
+variables: {}
+tags:
+- "ai-suggested"
+- "auto-generated"
+approvalRequired: false
+maxExecutionTimeSeconds: 300

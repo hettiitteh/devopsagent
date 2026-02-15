@@ -323,36 +323,70 @@ public class AgentEngine {
 
     /**
      * Compact the conversation to fit within context window limits.
-     * Like OpenClaw's automatic summarization.
+     * Uses LLM-based summarization for high-quality context preservation,
+     * with a truncation fallback if the LLM call fails.
      */
     private void compactConversation(AgentSession session) {
         log.info("Compacting conversation for session {} ({} messages)",
                 session.getSessionId(), session.getMessages().size());
 
         List<AgentMessage> messages = session.getMessages();
-        if (messages.size() <= 4) return; // Keep at least system + last exchange
+        if (messages.size() <= 4) return;
 
-        // Keep system prompt and last N messages, summarize the rest
         AgentMessage systemMsg = messages.get(0);
-        int keepLast = Math.min(10, messages.size() - 1);
+        int keepLast = Math.min(6, messages.size() - 1);
         List<AgentMessage> recentMessages = new ArrayList<>(messages.subList(messages.size() - keepLast, messages.size()));
 
-        // Create a summary of the removed messages
-        StringBuilder summary = new StringBuilder("Previous conversation summary:\n");
-        for (int i = 1; i < messages.size() - keepLast; i++) {
-            AgentMessage msg = messages.get(i);
-            if (msg.getRole() == AgentMessage.Role.ASSISTANT && msg.getContent() != null) {
-                summary.append("- ").append(truncate(msg.getContent(), 100)).append("\n");
+        // Build the old messages into text for summarization
+        List<AgentMessage> oldMessages = messages.subList(1, messages.size() - keepLast);
+        StringBuilder oldConversation = new StringBuilder();
+        for (AgentMessage msg : oldMessages) {
+            if (msg.getContent() != null) {
+                String role = msg.getRole() != null ? msg.getRole().name().toLowerCase() : "system";
+                oldConversation.append("[").append(role).append("] ")
+                        .append(truncate(msg.getContent(), 500)).append("\n");
             }
+            if (msg.getToolCalls() != null) {
+                for (AgentMessage.ToolCall tc : msg.getToolCalls()) {
+                    oldConversation.append("[tool_call] ").append(tc.getName()).append("\n");
+                }
+            }
+        }
+
+        String summaryText;
+        try {
+            // Use LLM to create an intelligent summary
+            List<AgentMessage> summarizationPrompt = List.of(
+                    AgentMessage.system("You are a conversation summarizer. Produce a concise summary " +
+                            "of the following SRE agent conversation. Preserve: key facts discovered, " +
+                            "tool results and their outputs, decisions made, unresolved issues, " +
+                            "service names mentioned, and any incident details. Keep it under 300 words."),
+                    AgentMessage.user(oldConversation.toString())
+            );
+            AgentMessage summaryResponse = llmClient.chat(summarizationPrompt, List.of());
+            summaryText = summaryResponse.getContent();
+            log.info("LLM summarization produced {} chars for session {}", summaryText.length(), session.getSessionId());
+        } catch (Exception e) {
+            log.warn("LLM summarization failed for session {}, falling back to truncation: {}",
+                    session.getSessionId(), e.getMessage());
+            // Fallback: truncation-based summary
+            StringBuilder fallback = new StringBuilder();
+            for (AgentMessage msg : oldMessages) {
+                if (msg.getContent() != null) {
+                    String role = msg.getRole() != null ? msg.getRole().name().toLowerCase() : "system";
+                    fallback.append("- [").append(role).append("] ").append(truncate(msg.getContent(), 150)).append("\n");
+                }
+            }
+            summaryText = fallback.toString();
         }
 
         List<AgentMessage> compacted = new ArrayList<>();
         compacted.add(systemMsg);
-        compacted.add(AgentMessage.system(summary.toString()));
+        compacted.add(AgentMessage.system("Previous conversation summary:\n" + summaryText));
         compacted.addAll(recentMessages);
 
         session.setMessages(compacted);
-        log.info("Compacted to {} messages", compacted.size());
+        log.info("Compacted to {} messages for session {}", compacted.size(), session.getSessionId());
     }
 
     private int estimateTokens(List<AgentMessage> messages) {

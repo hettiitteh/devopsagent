@@ -260,10 +260,11 @@
                 <div class="nav-item" data-page="incidents"><span class="icon">🚨</span> Incidents <span class="badge" id="incident-badge" style="display:none">0</span></div>
                 <div class="nav-item" data-page="approvals"><span class="icon">✋</span> Approvals <span class="badge" id="approval-badge" style="display:none">0</span></div>
                 <div class="nav-item" data-page="alerts"><span class="icon">🔔</span> Alert Rules</div>
-                <div class="nav-item" data-page="playbooks"><span class="icon">📋</span> Playbooks</div>
+                <div class="nav-item" data-page="playbooks"><span class="icon">📋</span> Playbooks <span class="badge" id="suggestion-badge" style="display:none">0</span></div>
             </div>
             <div class="nav-section">
                 <div class="nav-section-title">System</div>
+                <div class="nav-item" data-page="learnings"><span class="icon">🧠</span> Learnings</div>
                 <div class="nav-item" data-page="audit"><span class="icon">📝</span> Audit Log</div>
                 <div class="nav-item" data-page="events"><span class="icon">📜</span> Live Events</div>
                 <div class="nav-item" data-page="security"><span class="icon">🛡️</span> Security Audit</div>
@@ -380,8 +381,9 @@
                     <div class="chat-msg system">SRE Agent connected. Ask me to check health, investigate incidents, run playbooks, or diagnose issues.</div>
                 </div>
                 <div class="chat-input-area">
-                    <input class="form-input" id="chat-input" placeholder="e.g. Check the health of all monitored services..." onkeydown="if(event.key==='Enter')sendChat()">
+                    <input class="form-input" id="chat-input" placeholder="e.g. Check the health of all monitored services..." onkeydown="if(event.key==='Enter')sendChat()" style="flex:1;">
                     <button class="btn btn-primary" onclick="sendChat()">Send</button>
+                    <button class="btn btn-secondary" onclick="newChatSession()" title="Start a new conversation">New Chat</button>
                 </div>
             </div>
         </div>
@@ -449,9 +451,82 @@
                 <p>YAML-based runbooks for automated remediation</p>
             </div>
             <div class="btn-group" style="margin-bottom:16px;">
-                <button class="btn btn-secondary" onclick="loadPlaybooks()">↻ Reload Playbooks</button>
+                <button class="btn btn-primary" onclick="document.getElementById('create-playbook-modal').classList.add('active')">+ Create Playbook</button>
+                <button class="btn btn-secondary" onclick="loadPlaybooks()">↻ Reload</button>
+                <button class="btn btn-secondary" id="btn-generate-ai" onclick="generateAiSuggestions()">🧠 Generate AI Suggestions</button>
             </div>
+
+            <!-- AI Suggestions Section -->
+            <div id="suggestions-section" style="display:none; margin-bottom:20px;">
+                <h3 style="margin-bottom:8px;">🤖 AI Suggestions <span class="badge" id="inline-suggestion-badge">0</span></h3>
+                <p style="color:var(--text-secondary); font-size:0.85rem; margin-bottom:12px;">Based on recurring resolution patterns, the agent suggests these new playbooks:</p>
+                <div id="suggestions-list"></div>
+            </div>
+
+            <h3 style="margin-bottom:12px;">Available Playbooks</h3>
             <div id="playbooks-list"><div class="empty-state"><div class="loading"></div><br>Loading playbooks...</div></div>
+        </div>
+
+        <!-- Learnings -->
+        <div class="page" id="page-learnings">
+            <div class="page-header">
+                <h2>Learnings</h2>
+                <p>Resolution records captured from incidents, playbooks, and monitoring. Edit or add manual learnings to improve the agent.</p>
+            </div>
+
+            <!-- Summary Cards -->
+            <div id="learnings-summary" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;">
+                <div class="card" style="text-align:center;padding:16px;">
+                    <div style="font-size:24px;font-weight:700;" id="lr-total">0</div>
+                    <div style="font-size:11px;color:var(--text-dim)">Total Records</div>
+                </div>
+                <div class="card" style="text-align:center;padding:16px;">
+                    <div style="font-size:24px;font-weight:700;color:var(--green);" id="lr-successful">0</div>
+                    <div style="font-size:11px;color:var(--text-dim)">Successful</div>
+                </div>
+                <div class="card" style="text-align:center;padding:16px;">
+                    <div style="font-size:24px;font-weight:700;color:var(--accent);" id="lr-rate">0%</div>
+                    <div style="font-size:11px;color:var(--text-dim)">Success Rate</div>
+                </div>
+                <div class="card" style="text-align:center;padding:16px;">
+                    <div style="font-size:24px;font-weight:700;color:var(--text);" id="lr-avg-time">-</div>
+                    <div style="font-size:11px;color:var(--text-dim)">Avg Resolution</div>
+                </div>
+            </div>
+
+            <!-- Filter Bar + Add Button -->
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
+                <button class="btn btn-primary" onclick="openLearningModal()">+ Add Learning</button>
+                <select class="form-select" id="lr-filter-service" onchange="loadLearnings()" style="width:200px;">
+                    <option value="">All Services</option>
+                </select>
+                <select class="form-select" id="lr-filter-success" onchange="filterLearningsTable()" style="width:150px;">
+                    <option value="">All Results</option>
+                    <option value="true">Successful</option>
+                    <option value="false">Failed</option>
+                </select>
+                <button class="btn btn-secondary" onclick="loadLearnings()">↻ Refresh</button>
+            </div>
+
+            <!-- Records Table -->
+            <div style="overflow-x:auto;">
+                <table id="learnings-table" style="width:100%;">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Service</th>
+                            <th>Incident</th>
+                            <th>Tool Sequence</th>
+                            <th>Result</th>
+                            <th>Time</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="learnings-tbody">
+                        <tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-dim);">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
 
         <!-- Live Events -->
@@ -637,6 +712,69 @@
         <div class="btn-group" style="margin-top:16px;justify-content:flex-end;">
             <button class="btn btn-secondary" onclick="closeModal('create-alert-modal')">Cancel</button>
             <button class="btn btn-primary" onclick="createAlert()">Create Alert</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="create-playbook-modal">
+    <div class="modal" style="max-width:700px;">
+        <h3>Create Playbook</h3>
+        <div class="form-row">
+            <div class="form-group" style="flex:2"><label class="form-label">Playbook Name</label><input class="form-input" id="pb-name" placeholder="e.g. Docker Service Restart"></div>
+            <div class="form-group"><label class="form-label">Author</label><input class="form-input" id="pb-author" placeholder="user" value="user"></div>
+        </div>
+        <div class="form-group"><label class="form-label">Description</label><textarea class="form-textarea" id="pb-description" placeholder="Describe what this playbook does and when to use it..."></textarea></div>
+        <div class="form-row">
+            <div class="form-group"><label class="form-label">Tags (comma-separated)</label><input class="form-input" id="pb-tags" placeholder="docker, restart, remediation"></div>
+            <div class="form-group" style="flex:0;min-width:150px;display:flex;align-items:flex-end;">
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.85rem;">
+                    <input type="checkbox" id="pb-approval"> Approval required
+                </label>
+            </div>
+        </div>
+        <div class="form-row" style="margin-bottom:4px;">
+            <div class="form-group"><label class="form-label">Trigger Service (optional)</label><input class="form-input" id="pb-trigger-service" placeholder="e.g. my-app"></div>
+            <div class="form-group"><label class="form-label">Trigger Severity (optional)</label>
+                <select class="form-select" id="pb-trigger-severity">
+                    <option value="">-- None --</option>
+                    <option>LOW</option>
+                    <option>MEDIUM</option>
+                    <option>HIGH</option>
+                    <option>CRITICAL</option>
+                </select>
+            </div>
+        </div>
+        <h4 style="margin:12px 0 8px;">Steps</h4>
+        <div id="pb-steps-list"></div>
+        <button class="btn btn-secondary" onclick="addPlaybookStep()" style="margin-top:8px;">+ Add Step</button>
+        <div class="btn-group" style="margin-top:16px;justify-content:flex-end;">
+            <button class="btn btn-secondary" onclick="closeModal('create-playbook-modal'); resetPlaybookForm()">Cancel</button>
+            <button class="btn btn-primary" onclick="savePlaybook()">Save Playbook</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="learning-modal">
+    <div class="modal" style="max-width:600px;">
+        <h3 id="learning-modal-title">Add Learning Record</h3>
+        <input type="hidden" id="lr-edit-id" value="">
+        <div class="form-row">
+            <div class="form-group" style="flex:1"><label class="form-label">Service Name</label><input class="form-input" id="lr-service" placeholder="e.g. local-mysql"></div>
+            <div class="form-group" style="flex:1"><label class="form-label">Incident ID (optional)</label><input class="form-input" id="lr-incident-id" placeholder="e.g. abc-123"></div>
+        </div>
+        <div class="form-group"><label class="form-label">Incident Title</label><input class="form-input" id="lr-title" placeholder="e.g. Service unhealthy: local-mysql"></div>
+        <div class="form-group"><label class="form-label">Tool Sequence (comma-separated)</label><input class="form-input" id="lr-tools" placeholder="e.g. health_check, docker_exec, service_restart"></div>
+        <div class="form-row">
+            <div class="form-group"><label class="form-label">Resolution Time (seconds)</label><input class="form-input" id="lr-time" type="number" value="0" min="0"></div>
+            <div class="form-group" style="flex:0;min-width:150px;display:flex;align-items:flex-end;">
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.85rem;">
+                    <input type="checkbox" id="lr-success" checked> Successful resolution
+                </label>
+            </div>
+        </div>
+        <div class="btn-group" style="margin-top:16px;justify-content:flex-end;">
+            <button class="btn btn-secondary" onclick="closeModal('learning-modal')">Cancel</button>
+            <button class="btn btn-primary" onclick="saveLearning()">Save</button>
         </div>
     </div>
 </div>
@@ -1040,28 +1178,64 @@ async function toggleToolApproval(toolName, requiresApproval) {
 
 // ─── Playbooks ───
 async function loadPlaybooks() {
-    const data = await api('/api/playbooks');
+    const data = await api('/api/playbooks/list');
     const container = document.getElementById('playbooks-list');
-    if (!data || !data.playbooks) { container.innerHTML = '<div class="empty-state">No playbooks available</div>'; return; }
-    const lines = data.playbooks.split('\n').filter(l => l.startsWith('- '));
-    if (lines.length === 0) { container.innerHTML = '<div class="empty-state">No playbooks found</div>'; return; }
-    container.innerHTML = lines.map(line => {
-        const match = line.match(/^- (.+?):\s*(.+?)\s*\((\d+) steps?,\s*approval:\s*(\w+)\)/);
-        if (!match) return `<div class="card"><p>${line}</p></div>`;
-        const [, id, name, steps, approval] = match;
+    if (!data || !Array.isArray(data) || data.length === 0) {
+        container.innerHTML = '<div class="empty-state">No playbooks available. Create one using the button above or ask the agent in chat.</div>';
+        return;
+    }
+    container.innerHTML = data.map(pb => {
+        const tags = (pb.tags || []).map(t => `<span style="background:var(--bg-surface);padding:2px 6px;border-radius:4px;font-size:11px;margin-right:4px;">${t}</span>`).join('');
         return `<div class="card" style="display:flex;align-items:center;justify-content:space-between;">
-            <div>
-                <strong>${name}</strong>
+            <div style="flex:1;">
+                <strong>${pb.name || pb.id}</strong>
+                ${pb.approvalRequired ? '<span class="badge" style="background:var(--warning);color:#000;margin-left:8px;">APPROVAL</span>' : ''}
                 <div style="font-size:12px;color:var(--text-dim);margin-top:4px;">
-                    ID: <code>${id}</code> &nbsp;|&nbsp; ${steps} steps &nbsp;|&nbsp; Approval: ${approval}
+                    ID: <code>${pb.id}</code> &nbsp;|&nbsp; ${pb.steps} steps &nbsp;|&nbsp; Author: ${pb.author || 'unknown'}
                 </div>
+                <div style="font-size:12px;color:var(--text-dim);margin-top:2px;">
+                    ${pb.description ? '<em>' + pb.description.substring(0, 120) + (pb.description.length > 120 ? '...' : '') + '</em>' : ''}
+                </div>
+                <div style="margin-top:4px;">${tags}</div>
             </div>
             <div class="btn-group">
-                <button class="btn btn-sm btn-secondary" onclick="dryRunPlaybook('${id}')">Dry Run</button>
+                <button class="btn btn-sm btn-secondary" onclick="viewPlaybook('${pb.id}')">View</button>
+                <button class="btn btn-sm btn-secondary" onclick="dryRunPlaybook('${pb.id}')">Dry Run</button>
+                <button class="btn btn-sm" style="background:var(--error);color:white;" onclick="deletePlaybook('${pb.id}', '${(pb.name||'').replace(/'/g, '')}')">Delete</button>
             </div>
         </div>`;
     }).join('');
+    // Also load suggestions
+    loadSuggestions();
 }
+
+async function viewPlaybook(id) {
+    const pb = await api(`/api/playbooks/${id}`);
+    if (!pb) { alert('Playbook not found'); return; }
+    let details = `Name: ${pb.name}\nID: ${pb.id}\nDescription: ${pb.description || ''}\nApproval: ${pb.approvalRequired}\nSteps:\n`;
+    (pb.steps || []).forEach((s, i) => {
+        details += `  ${i+1}. ${s.name} (tool: ${s.tool}, onFailure: ${s.onFailure || 'continue'})\n`;
+        if (s.parameters && Object.keys(s.parameters).length > 0) {
+            details += `     params: ${JSON.stringify(s.parameters)}\n`;
+        }
+    });
+    if (pb.triggers && pb.triggers.length > 0) {
+        details += `Triggers:\n`;
+        pb.triggers.forEach(t => details += `  - ${t.type}: service=${t.service || '*'}, severity=${t.severity || '*'}\n`);
+    }
+    alert(details);
+}
+
+async function deletePlaybook(id, name) {
+    if (!confirm(`Are you sure you want to delete playbook "${name || id}"? This cannot be undone.`)) return;
+    const res = await api(`/api/playbooks/${id}`, { method: 'DELETE' });
+    if (res && res.status === 'deleted') {
+        loadPlaybooks();
+    } else {
+        alert('Failed to delete playbook: ' + (res ? JSON.stringify(res) : 'Unknown error'));
+    }
+}
+
 async function dryRunPlaybook(id) {
     const params = prompt('Parameters as JSON (or leave empty):', '{}');
     if (params === null) return;
@@ -1074,7 +1248,210 @@ async function dryRunPlaybook(id) {
     if (res) alert(res.result || JSON.stringify(res));
 }
 
+// ─── Playbook Form (Create Modal) ───
+let pbStepCounter = 0;
+function addPlaybookStep() {
+    const container = document.getElementById('pb-steps-list');
+    const idx = pbStepCounter++;
+    const div = document.createElement('div');
+    div.className = 'card';
+    div.id = `pb-step-${idx}`;
+    div.style.cssText = 'padding:10px;margin-bottom:8px;';
+    div.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <strong style="font-size:13px;">Step ${container.children.length + 1}</strong>
+            <button class="btn btn-sm" style="background:var(--error);color:white;padding:2px 8px;" onclick="removePlaybookStep('pb-step-${idx}')">✕</button>
+        </div>
+        <div class="form-row">
+            <div class="form-group"><label class="form-label">Step Name</label><input class="form-input pb-step-name" placeholder="e.g. Check health"></div>
+            <div class="form-group"><label class="form-label">Tool</label>
+                <select class="form-select pb-step-tool">
+                    <option value="health_check">health_check</option>
+                    <option value="docker_exec">docker_exec</option>
+                    <option value="kubectl_exec">kubectl_exec</option>
+                    <option value="service_restart">service_restart</option>
+                    <option value="log_search">log_search</option>
+                    <option value="metrics_query">metrics_query</option>
+                    <option value="network_diag">network_diag</option>
+                    <option value="system_info">system_info</option>
+                    <option value="ssh_exec">ssh_exec</option>
+                    <option value="incident_manage">incident_manage</option>
+                    <option value="alert_manage">alert_manage</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group" style="flex:2"><label class="form-label">Parameters (JSON)</label><input class="form-input pb-step-params" placeholder='{"url":"http://localhost:8080/health"}'></div>
+            <div class="form-group"><label class="form-label">On Failure</label>
+                <select class="form-select pb-step-onfailure">
+                    <option value="continue">continue</option>
+                    <option value="abort">abort</option>
+                    <option value="retry">retry</option>
+                </select>
+            </div>
+        </div>`;
+    container.appendChild(div);
+}
+
+function removePlaybookStep(stepId) {
+    const el = document.getElementById(stepId);
+    if (el) el.remove();
+    // Re-number steps
+    const container = document.getElementById('pb-steps-list');
+    container.querySelectorAll('.card strong').forEach((el, i) => el.textContent = `Step ${i + 1}`);
+}
+
+function resetPlaybookForm() {
+    document.getElementById('pb-name').value = '';
+    document.getElementById('pb-description').value = '';
+    document.getElementById('pb-tags').value = '';
+    document.getElementById('pb-author').value = 'user';
+    document.getElementById('pb-approval').checked = false;
+    document.getElementById('pb-trigger-service').value = '';
+    document.getElementById('pb-trigger-severity').value = '';
+    document.getElementById('pb-steps-list').innerHTML = '';
+    pbStepCounter = 0;
+}
+
+async function savePlaybook() {
+    const name = document.getElementById('pb-name').value.trim();
+    if (!name) { alert('Playbook name is required'); return; }
+
+    const stepEls = document.getElementById('pb-steps-list').children;
+    if (stepEls.length === 0) { alert('At least one step is required'); return; }
+
+    const steps = [];
+    for (let i = 0; i < stepEls.length; i++) {
+        const el = stepEls[i];
+        const stepName = el.querySelector('.pb-step-name').value.trim() || `Step ${i+1}`;
+        const tool = el.querySelector('.pb-step-tool').value;
+        const paramsStr = el.querySelector('.pb-step-params').value.trim();
+        const onFailure = el.querySelector('.pb-step-onfailure').value;
+        let params = {};
+        if (paramsStr) {
+            try { params = JSON.parse(paramsStr); } catch(e) { alert(`Step ${i+1}: Invalid JSON parameters`); return; }
+        }
+        steps.push({ order: i + 1, name: stepName, tool, parameters: params, onFailure });
+    }
+
+    const tagsStr = document.getElementById('pb-tags').value.trim();
+    const tags = tagsStr ? tagsStr.split(',').map(t => t.trim()).filter(t => t) : [];
+    const approvalRequired = document.getElementById('pb-approval').checked;
+    const triggerService = document.getElementById('pb-trigger-service').value.trim();
+    const triggerSeverity = document.getElementById('pb-trigger-severity').value;
+    const description = document.getElementById('pb-description').value.trim();
+    const author = document.getElementById('pb-author').value.trim() || 'user';
+
+    const triggers = [];
+    if (triggerService || triggerSeverity) {
+        triggers.push({ type: 'service_unhealthy', service: triggerService || '*', severity: triggerSeverity || '*' });
+    }
+
+    const playbook = { name, description, author, steps, tags, approvalRequired, triggers, maxExecutionTimeSeconds: 300 };
+
+    const res = await api('/api/playbooks', {
+        method: 'POST',
+        body: JSON.stringify(playbook)
+    });
+
+    if (res && res.id) {
+        closeModal('create-playbook-modal');
+        resetPlaybookForm();
+        loadPlaybooks();
+    } else {
+        alert('Failed to save playbook: ' + (res ? (res.error || JSON.stringify(res)) : 'Unknown error'));
+    }
+}
+
+// ─── Playbook Suggestions ───
+async function generateAiSuggestions() {
+    const btn = document.getElementById('btn-generate-ai');
+    const origText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Generating...';
+    try {
+        const res = await api('/api/playbooks/suggestions/generate-ai', { method: 'POST' });
+        if (res && res.status === 'completed') {
+            await loadSuggestions();
+            btn.textContent = '✓ Done!';
+            setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 2000);
+        } else {
+            btn.textContent = '✗ Failed';
+            setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 3000);
+        }
+    } catch (e) {
+        btn.textContent = '✗ Error';
+        setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 3000);
+    }
+}
+
+async function loadSuggestions() {
+    try {
+        const data = await api('/api/playbooks/suggestions');
+        const section = document.getElementById('suggestions-section');
+        const container = document.getElementById('suggestions-list');
+        const badge = document.getElementById('suggestion-badge');
+        const inlineBadge = document.getElementById('inline-suggestion-badge');
+
+        if (!data || !Array.isArray(data) || data.length === 0) {
+            section.style.display = 'none';
+            badge.style.display = 'none';
+            return;
+        }
+
+        section.style.display = 'block';
+        badge.style.display = 'inline-block';
+        badge.textContent = data.length;
+        inlineBadge.textContent = data.length;
+
+        container.innerHTML = data.map(s => `
+            <div class="card" style="border-left:3px solid var(--primary);margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;">
+                <div style="flex:1;">
+                    <strong>${s.name}</strong>
+                    <span class="badge" style="margin-left:8px;">Seen ${s.frequency}x</span>
+                    <div style="font-size:12px;color:var(--text-dim);margin-top:4px;">
+                        Service: <code>${s.service}</code> &nbsp;|&nbsp; Avg resolution: ${Math.round(s.avgResolutionMs/1000)}s
+                    </div>
+                    <div style="font-size:12px;color:var(--text-dim);margin-top:2px;">
+                        <em>${(s.description || '').substring(0, 150)}</em>
+                    </div>
+                </div>
+                <div class="btn-group">
+                    <button class="btn btn-sm btn-primary" onclick="approveSuggestion('${s.id}')">Approve</button>
+                    <button class="btn btn-sm btn-secondary" onclick="dismissSuggestion('${s.id}')">Dismiss</button>
+                </div>
+            </div>`).join('');
+    } catch(e) {
+        // Suggestions not available - that's fine
+    }
+}
+
+async function approveSuggestion(id) {
+    const res = await api(`/api/playbooks/suggestions/${id}/approve`, {
+        method: 'POST',
+        body: JSON.stringify({ reviewed_by: 'user' })
+    });
+    if (res && res.status === 'APPROVED') {
+        loadPlaybooks(); // also refreshes suggestions
+    } else {
+        alert('Failed to approve suggestion: ' + (res ? (res.error || JSON.stringify(res)) : 'Unknown error'));
+    }
+}
+
+async function dismissSuggestion(id) {
+    if (!confirm('Dismiss this suggestion? It will not be shown again for this pattern.')) return;
+    const res = await api(`/api/playbooks/suggestions/${id}/dismiss`, {
+        method: 'POST',
+        body: JSON.stringify({ reviewed_by: 'user' })
+    });
+    if (res && res.status === 'DISMISSED') {
+        loadPlaybooks();
+    }
+}
+
 // ─── Agent Chat ───
+let chatSessionId = null;
+
 async function sendChat() {
     const input = document.getElementById('chat-input');
     const msg = input.value.trim();
@@ -1087,14 +1464,19 @@ async function sendChat() {
     thinkingDiv.innerHTML = '<div class="loading"></div> Thinking...';
     document.getElementById('chat-messages').appendChild(thinkingDiv);
     document.getElementById('chat-messages').scrollTop = document.getElementById('chat-messages').scrollHeight;
+    const body = { message: msg };
+    if (chatSessionId) body.session_id = chatSessionId;
     const res = await api('/api/agent/chat', {
         method: 'POST',
-        body: JSON.stringify({ message: msg })
+        body: JSON.stringify(body)
     });
     // Remove loading message by ID (reliable even if WebSocket messages were appended in between)
     const thinkingEl = document.getElementById('chat-thinking');
     if (thinkingEl) thinkingEl.remove();
     if (res && res.response) {
+        // Persist session for multi-turn conversation
+        if (res.session_id) chatSessionId = res.session_id;
+
         let text = res.response;
         if (res.tools_used && res.tools_used.length > 0) text += `\n\n🔧 Tools used: ${res.tools_used.join(', ')}`;
         appendChat('assistant', formatResponse(text));
@@ -1111,6 +1493,12 @@ async function sendChat() {
     } else {
         appendChat('assistant', 'Error: Could not get a response. Make sure OPENAI_API_KEY is set.');
     }
+}
+
+function newChatSession() {
+    chatSessionId = null;
+    const msgs = document.getElementById('chat-messages');
+    msgs.innerHTML = '<div class="chat-msg system">New conversation started. Ask me anything about your services, incidents, or infrastructure.</div>';
 }
 function appendChat(role, html) {
     const msgs = document.getElementById('chat-messages');
@@ -1274,6 +1662,176 @@ async function refreshInsights() {
     container.innerHTML = html;
 }
 
+// ─── Learnings Page ───
+let allLearningRecords = [];
+
+async function loadLearnings() {
+    // Load summary
+    const insights = await api('/api/learning/insights');
+    if (insights) {
+        document.getElementById('lr-total').textContent = insights.total_resolutions || 0;
+        document.getElementById('lr-successful').textContent = insights.total_successful || 0;
+        document.getElementById('lr-rate').textContent = (insights.overall_success_rate || 0).toFixed(1) + '%';
+        // Calculate avg resolution time from service stats
+        if (insights.service_stats && insights.service_stats.length > 0) {
+            const totalMs = insights.service_stats.reduce((sum, s) => sum + (s.avg_resolution_ms || 0), 0);
+            const avg = totalMs / insights.service_stats.length;
+            document.getElementById('lr-avg-time').textContent = avg > 0 ? (avg / 1000).toFixed(1) + 's' : '-';
+        } else {
+            document.getElementById('lr-avg-time').textContent = '-';
+        }
+    }
+
+    // Load records
+    const serviceFilter = document.getElementById('lr-filter-service').value;
+    const url = serviceFilter ? `/api/learning/records?service=${encodeURIComponent(serviceFilter)}` : '/api/learning/records';
+    const records = await api(url);
+    if (!records || !Array.isArray(records)) {
+        document.getElementById('learnings-tbody').innerHTML =
+            '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-dim);">No learning records found.</td></tr>';
+        allLearningRecords = [];
+        return;
+    }
+    allLearningRecords = records;
+
+    // Populate service filter dropdown (preserve current selection)
+    const currentFilter = document.getElementById('lr-filter-service').value;
+    const services = [...new Set(records.map(r => r.service).filter(Boolean))].sort();
+    const filterEl = document.getElementById('lr-filter-service');
+    const existingOptions = [...filterEl.options].map(o => o.value);
+    services.forEach(s => {
+        if (!existingOptions.includes(s)) {
+            const opt = document.createElement('option');
+            opt.value = s; opt.textContent = s;
+            filterEl.appendChild(opt);
+        }
+    });
+    filterEl.value = currentFilter;
+
+    filterLearningsTable();
+}
+
+function filterLearningsTable() {
+    const successFilter = document.getElementById('lr-filter-success').value;
+    let filtered = allLearningRecords;
+    if (successFilter === 'true') filtered = filtered.filter(r => r.success);
+    if (successFilter === 'false') filtered = filtered.filter(r => !r.success);
+    renderLearningsTable(filtered);
+}
+
+function renderLearningsTable(records) {
+    const tbody = document.getElementById('learnings-tbody');
+    if (records.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-dim);">No records match the current filters.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = records.map(r => {
+        let tools = '';
+        try {
+            const arr = JSON.parse(r.toolSequence || '[]');
+            tools = arr.map(t => `<code style="font-size:11px;">${t}</code>`).join(' <span style="color:var(--text-dim);">&rarr;</span> ');
+        } catch(e) { tools = r.toolSequence || ''; }
+        const date = r.createdAt ? r.createdAt.substring(0, 19).replace('T', ' ') : '-';
+        const successBadge = r.success
+            ? '<span class="badge" style="background:var(--green);color:#000;">SUCCESS</span>'
+            : '<span class="badge" style="background:var(--error);color:#fff;">FAILED</span>';
+        const timeSec = r.resolutionTimeMs > 0 ? (r.resolutionTimeMs / 1000).toFixed(1) + 's' : '-';
+        return `<tr>
+            <td style="white-space:nowrap;font-size:12px;">${date}</td>
+            <td><strong>${r.service || '-'}</strong></td>
+            <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(r.incidentTitle||'').replace(/"/g,'&quot;')}">${r.incidentTitle || '-'}</td>
+            <td style="max-width:300px;overflow:hidden;">${tools}</td>
+            <td>${successBadge}</td>
+            <td style="white-space:nowrap;">${timeSec}</td>
+            <td style="white-space:nowrap;">
+                <button class="btn btn-sm btn-secondary" onclick="openLearningModal('${r.id}')">Edit</button>
+                <button class="btn btn-sm" style="background:var(--error);color:white;" onclick="deleteLearning('${r.id}')">Delete</button>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+async function openLearningModal(id) {
+    document.getElementById('lr-edit-id').value = '';
+    document.getElementById('lr-service').value = '';
+    document.getElementById('lr-incident-id').value = '';
+    document.getElementById('lr-title').value = '';
+    document.getElementById('lr-tools').value = '';
+    document.getElementById('lr-time').value = '0';
+    document.getElementById('lr-success').checked = true;
+    document.getElementById('learning-modal-title').textContent = 'Add Learning Record';
+
+    if (id) {
+        const record = await api(`/api/learning/records/${id}`);
+        if (record) {
+            document.getElementById('lr-edit-id').value = record.id;
+            document.getElementById('lr-service').value = record.service || '';
+            document.getElementById('lr-incident-id').value = record.incidentId || '';
+            document.getElementById('lr-title').value = record.incidentTitle || '';
+            document.getElementById('lr-success').checked = record.success;
+            document.getElementById('lr-time').value = record.resolutionTimeMs ? Math.round(record.resolutionTimeMs / 1000) : 0;
+            try {
+                const tools = JSON.parse(record.toolSequence || '[]');
+                document.getElementById('lr-tools').value = tools.join(', ');
+            } catch(e) {
+                document.getElementById('lr-tools').value = record.toolSequence || '';
+            }
+            document.getElementById('learning-modal-title').textContent = 'Edit Learning Record';
+        }
+    }
+    openModal('learning-modal');
+}
+
+async function saveLearning() {
+    const editId = document.getElementById('lr-edit-id').value;
+    const service = document.getElementById('lr-service').value.trim();
+    const incidentId = document.getElementById('lr-incident-id').value.trim();
+    const incidentTitle = document.getElementById('lr-title').value.trim();
+    const toolsStr = document.getElementById('lr-tools').value.trim();
+    const timeSec = parseInt(document.getElementById('lr-time').value) || 0;
+    const success = document.getElementById('lr-success').checked;
+
+    if (!service) { alert('Service name is required'); return; }
+    if (!toolsStr) { alert('Tool sequence is required'); return; }
+
+    const toolSequence = toolsStr.split(',').map(t => t.trim()).filter(t => t);
+
+    const body = {
+        service,
+        incidentId: incidentId || null,
+        incidentTitle: incidentTitle || null,
+        toolSequence,
+        success,
+        resolutionTimeMs: timeSec * 1000
+    };
+
+    let res;
+    if (editId) {
+        res = await api(`/api/learning/records/${editId}`, { method: 'PUT', body: JSON.stringify(body) });
+    } else {
+        res = await api('/api/learning/records', { method: 'POST', body: JSON.stringify(body) });
+    }
+
+    if (res && res.id) {
+        closeModal('learning-modal');
+        loadLearnings();
+        refreshInsights(); // Update dashboard card too
+    } else {
+        alert('Failed to save learning record: ' + (res ? JSON.stringify(res) : 'Unknown error'));
+    }
+}
+
+async function deleteLearning(id) {
+    if (!confirm('Are you sure you want to delete this learning record? This cannot be undone.')) return;
+    const res = await api(`/api/learning/records/${id}`, { method: 'DELETE' });
+    if (res && res.status === 'deleted') {
+        loadLearnings();
+        refreshInsights();
+    } else {
+        alert('Failed to delete record.');
+    }
+}
+
 // ─── RPC Commands ───
 async function sendRpc() {
     const method = document.getElementById('rpc-method').value;
@@ -1313,11 +1871,12 @@ connectWs();
 refreshDashboard();
 setTimeout(() => {
     loadTools(); refreshServices(); refreshIncidents(); refreshAlerts();
-    loadPlaybooks(); refreshApprovals(); refreshAuditLog(); refreshInsights();
+    loadPlaybooks(); refreshApprovals(); refreshAuditLog(); refreshInsights(); loadLearnings();
 }, 500);
 setInterval(refreshDashboard, 15000);
 setInterval(refreshApprovals, 30000);
 setInterval(refreshInsights, 60000);
+setInterval(loadSuggestions, 120000);
 </script>
 </body>
 </html>

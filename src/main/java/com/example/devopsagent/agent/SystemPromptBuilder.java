@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Dynamic System Prompt Builder (OpenClaw Architecture).
@@ -66,7 +67,10 @@ public class SystemPromptBuilder {
         // Section 8: Playbook Guidelines
         prompt.append(buildPlaybookSection());
 
-        // Section 8.5: Recommended Approaches from Learning
+        // Section 8.5: Global Learning Insights (always included)
+        prompt.append(buildGlobalLearningSection());
+
+        // Section 8.6: Per-Service Recommended Approaches from Learning
         if (context != null && context.getAdditionalContext() != null) {
             prompt.append(buildRecommendedApproachesSection(context.getAdditionalContext()));
         }
@@ -214,6 +218,64 @@ public class SystemPromptBuilder {
                 7. Update the incident with the playbook results
 
                 """;
+    }
+
+    @SuppressWarnings("unchecked")
+    private String buildGlobalLearningSection() {
+        try {
+            Map<String, Object> insights = learningService.getInsights();
+            int totalResolutions = ((Number) insights.getOrDefault("total_resolutions", 0)).intValue();
+            if (totalResolutions == 0) return "";
+
+            StringBuilder section = new StringBuilder("# Learning Insights (from past resolutions)\n");
+
+            // Overall stats
+            double overallSuccessRate = 0;
+            Object successRateObj = insights.get("overall_success_rate");
+            if (successRateObj instanceof Number) {
+                overallSuccessRate = ((Number) successRateObj).doubleValue();
+            }
+            section.append(String.format("Total resolutions recorded: %d (overall success rate: %.1f%%)\n\n", totalResolutions, overallSuccessRate));
+
+            // Top resolution patterns
+            Object patternsObj = insights.get("patterns");
+            if (patternsObj instanceof List<?>) {
+                List<Map<String, Object>> patterns = (List<Map<String, Object>>) patternsObj;
+                if (!patterns.isEmpty()) {
+                    section.append("Top resolution patterns:\n");
+                    int count = 0;
+                    for (Map<String, Object> p : patterns) {
+                        if (count >= 3) break;
+                        section.append(String.format("  - Tools: %s (used %s times)\n",
+                                p.getOrDefault("sequence", "unknown"),
+                                p.getOrDefault("count", 0)));
+                        count++;
+                    }
+                    section.append("\n");
+                }
+            }
+
+            // Per-service stats
+            Object serviceStatsObj = insights.get("service_stats");
+            if (serviceStatsObj instanceof List<?>) {
+                List<Map<String, Object>> serviceStats = (List<Map<String, Object>>) serviceStatsObj;
+                if (!serviceStats.isEmpty()) {
+                    section.append("Per-service success rates:\n");
+                    for (Map<String, Object> s : serviceStats) {
+                        section.append(String.format("  - %s: %.1f%% success (%s resolutions)\n",
+                                s.getOrDefault("service", "unknown"),
+                                s.get("success_rate") instanceof Number ? ((Number) s.get("success_rate")).doubleValue() : 0.0,
+                                s.getOrDefault("total", 0)));
+                    }
+                    section.append("\n");
+                }
+            }
+
+            section.append("Use these patterns to inform your approach. Prefer proven tool sequences when applicable.\n\n");
+            return section.toString();
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     private String buildRecommendedApproachesSection(String serviceContext) {

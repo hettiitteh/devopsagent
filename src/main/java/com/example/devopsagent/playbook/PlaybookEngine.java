@@ -276,6 +276,12 @@ public class PlaybookEngine {
                     }
                 }
             });
+            // Also inject playbook-level params for keys not already in the step params.
+            // This allows auto-triggered playbooks to pass context (e.g. service_name)
+            // even when step parameters don't define explicit placeholders.
+            for (Map.Entry<String, Object> entry : params.entrySet()) {
+                mergedParams.putIfAbsent(entry.getKey(), entry.getValue());
+            }
         }
 
         try {
@@ -422,6 +428,13 @@ public class PlaybookEngine {
      */
     public Optional<Playbook> getPlaybook(String playbookId) {
         return Optional.ofNullable(playbooks.get(playbookId));
+    }
+
+    /**
+     * Get all loaded playbooks as a collection.
+     */
+    public Collection<Playbook> getAllPlaybooks() {
+        return playbooks.values();
     }
 
     /**

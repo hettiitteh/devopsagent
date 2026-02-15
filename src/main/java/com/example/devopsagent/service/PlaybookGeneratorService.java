@@ -91,8 +91,30 @@ public class PlaybookGeneratorService {
      */
     public Playbook generateAndSave(String sessionId, String playbookName, String description) {
         Playbook playbook = generateFromSession(sessionId, playbookName, description);
+        return savePlaybook(playbook, Map.of("session_id", sessionId));
+    }
 
+    /**
+     * Save a playbook to disk and reload the engine.
+     * Used by the UI create form, the chat agent tool, and the session-based generator.
+     */
+    public Playbook savePlaybook(Playbook playbook, Map<String, Object> extraAuditData) {
         try {
+            // Ensure the playbook has an ID
+            if (playbook.getId() == null || playbook.getId().isBlank()) {
+                String id = playbook.getName().toLowerCase().replaceAll("[^a-z0-9]+", "-").replaceAll("^-|-$", "");
+                playbook.setId(id);
+            }
+            if (playbook.getVersion() == null) playbook.setVersion("1.0");
+            if (playbook.getAuthor() == null) playbook.setAuthor("user");
+
+            // Ensure step ordering
+            if (playbook.getSteps() != null) {
+                for (int i = 0; i < playbook.getSteps().size(); i++) {
+                    playbook.getSteps().get(i).setOrder(i + 1);
+                }
+            }
+
             String directory = "./playbooks";
             File dir = new File(directory);
             if (!dir.exists()) dir.mkdirs();
@@ -101,20 +123,48 @@ public class PlaybookGeneratorService {
             File file = new File(dir, filename);
             yamlMapper.writeValue(file, playbook);
 
-            log.info("Saved auto-generated playbook to {}", file.getAbsolutePath());
+            log.info("Saved playbook '{}' to {}", playbook.getName(), file.getAbsolutePath());
 
             // Reload playbooks so the new one is available
             playbookEngine.loadPlaybooks();
 
             // Audit
-            auditService.log("system", "PLAYBOOK_GENERATED", playbook.getId(),
-                    Map.of("name", playbookName, "steps", playbook.getSteps().size(),
-                           "session_id", sessionId));
+            Map<String, Object> auditData = new HashMap<>(Map.of(
+                    "name", playbook.getName(),
+                    "steps", playbook.getSteps() != null ? playbook.getSteps().size() : 0));
+            if (extraAuditData != null) auditData.putAll(extraAuditData);
+            auditService.log("system", "PLAYBOOK_SAVED", playbook.getId(), auditData);
 
             return playbook;
         } catch (IOException e) {
-            log.error("Failed to save generated playbook: {}", e.getMessage());
+            log.error("Failed to save playbook: {}", e.getMessage());
             throw new RuntimeException("Failed to save playbook: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Delete a playbook from disk and reload the engine.
+     */
+    public boolean deletePlaybook(String playbookId) {
+        String directory = "./playbooks";
+        File file = new File(directory, playbookId + ".yml");
+        if (!file.exists()) {
+            // Try .yaml extension
+            file = new File(directory, playbookId + ".yaml");
+        }
+        if (!file.exists()) {
+            log.warn("Playbook file not found for deletion: {}", playbookId);
+            return false;
+        }
+
+        boolean deleted = file.delete();
+        if (deleted) {
+            log.info("Deleted playbook file: {}", file.getAbsolutePath());
+            playbookEngine.loadPlaybooks();
+            auditService.log("system", "PLAYBOOK_DELETED", playbookId, Map.of());
+        } else {
+            log.error("Failed to delete playbook file: {}", file.getAbsolutePath());
+        }
+        return deleted;
     }
 }

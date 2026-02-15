@@ -112,11 +112,13 @@ devops-agent:
           - docker_exec
           - ssh_exec
           - playbook_run
+          - playbook_create
           - incident_manage
           - alert_manage
           - service_restart
           - network_diag
           - system_info
+          - learning_query
       full:
         allowed-tools: ["*"]
 
@@ -132,6 +134,10 @@ devops-agent:
       enabled: false
       smtp-host: ${SMTP_HOST:localhost}
       smtp-port: ${SMTP_PORT:587}
+
+  # AI Suggestions settings
+  suggestions:
+    ai-enabled: true
 
   # Security settings
   security:

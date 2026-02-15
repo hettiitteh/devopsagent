@@ -27,6 +27,7 @@ public class AgentProperties {
     private ToolPolicyConfig toolPolicy = new ToolPolicyConfig();
     private NotificationConfig notifications = new NotificationConfig();
     private SecurityConfig security = new SecurityConfig();
+    private SuggestionsConfig suggestions = new SuggestionsConfig();
 
     @Data
     public static class GatewayConfig {
@@ -115,6 +116,11 @@ public class AgentProperties {
             private String smtpHost = "localhost";
             private int smtpPort = 587;
         }
+    }
+
+    @Data
+    public static class SuggestionsConfig {
+        private boolean aiEnabled = true;
     }
 
     @Data

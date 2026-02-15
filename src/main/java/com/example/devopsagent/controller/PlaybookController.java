@@ -25,11 +25,31 @@ public class PlaybookController {
     private final PlaybookGeneratorService playbookGeneratorService;
 
     /**
-     * List all available playbooks.
+     * List all available playbooks (text format, backward compat).
      */
     @GetMapping
     public ResponseEntity<Map<String, String>> listPlaybooks() {
         return ResponseEntity.ok(Map.of("playbooks", playbookEngine.listPlaybooks().getTextContent()));
+    }
+
+    /**
+     * List all playbooks as structured JSON.
+     */
+    @GetMapping("/list")
+    public ResponseEntity<List<Map<String, Object>>> listPlaybooksStructured() {
+        List<Map<String, Object>> result = new java.util.ArrayList<>();
+        for (Playbook pb : playbookEngine.getAllPlaybooks()) {
+            result.add(Map.of(
+                    "id", pb.getId() != null ? pb.getId() : "",
+                    "name", pb.getName() != null ? pb.getName() : "",
+                    "description", pb.getDescription() != null ? pb.getDescription() : "",
+                    "steps", pb.getSteps() != null ? pb.getSteps().size() : 0,
+                    "approvalRequired", pb.isApprovalRequired(),
+                    "tags", pb.getTags() != null ? pb.getTags() : List.of(),
+                    "author", pb.getAuthor() != null ? pb.getAuthor() : ""
+            ));
+        }
+        return ResponseEntity.ok(result);
     }
 
     /**
@@ -40,6 +60,36 @@ public class PlaybookController {
         return playbookEngine.getPlaybook(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Create or update a playbook from a full definition.
+     */
+    @PostMapping
+    public ResponseEntity<Map<String, Object>> createPlaybook(@RequestBody Playbook playbook) {
+        try {
+            Playbook saved = playbookGeneratorService.savePlaybook(playbook, Map.of("source", "ui"));
+            return ResponseEntity.ok(Map.of(
+                    "id", saved.getId(),
+                    "name", saved.getName(),
+                    "steps", saved.getSteps() != null ? saved.getSteps().size() : 0,
+                    "message", "Playbook saved successfully"
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * Delete a playbook.
+     */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Map<String, String>> deletePlaybook(@PathVariable String id) {
+        boolean deleted = playbookGeneratorService.deletePlaybook(id);
+        if (deleted) {
+            return ResponseEntity.ok(Map.of("status", "deleted", "id", id));
+        }
+        return ResponseEntity.notFound().build();
     }
 
     /**
