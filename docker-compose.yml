@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  devops-agent:
+    build: .
+    container_name: devops-agent
+    ports:
+      - "8080:18789"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      # Persist H2 database across restarts
+      - agent-data:/app/data
+      # Mount Docker socket so the agent can manage containers
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Mount kubeconfig so the agent can access Kubernetes clusters
+      - ~/.kube/config:/root/.kube/config:ro
+    restart: unless-stopped
+
+volumes:
+  agent-data:
