@@ -340,57 +340,117 @@
         <div class="page" id="page-architecture">
             <div class="page-header">
                 <h2>How It Works</h2>
-                <p>Architecture based on the OpenClaw gateway-centric agent orchestration pattern</p>
+                <p>An intelligent SRE agent built on the OpenClaw gateway-centric orchestration pattern, enhanced with vector embeddings, self-improving learning, and LLM-driven reasoning</p>
             </div>
+
+            <!-- Architecture Overview -->
             <div class="card">
                 <div class="card-title">Architecture Overview</div>
                 <div class="arch-flow">
                     <div class="arch-box" style="border-color:var(--accent);">
                         <h4>Gateway (Port 18789)</h4>
-                        <p>WebSocket + HTTP JSON-RPC server. The center of everything — all clients, UIs, and integrations communicate through this single entry point. Manages sessions, routes messages, and broadcasts real-time events.</p>
+                        <p>WebSocket + HTTP JSON-RPC server. All clients, UIs, and integrations communicate through this single entry point. Manages sessions, routes messages, and broadcasts real-time events across the entire platform.</p>
                     </div>
                     <div class="arch-arrow">↕</div>
                     <div class="arch-box" style="border-color:var(--blue);">
                         <h4>Agent Engine (LLM-Powered Agentic Loop)</h4>
-                        <p>Receives a task → builds dynamic system prompt → sends to LLM with available tools → LLM reasons and makes tool calls → executes tools → appends results → loops until done. No explicit planner — the LLM drives the workflow through reasoning.</p>
+                        <p>Receives a task, builds a dynamic 11-section system prompt (including learning insights and semantic recommendations), sends to GPT-4o with tool definitions, executes tool calls through the policy engine, and loops until done. Human approval gates pause the loop for sensitive actions and resume automatically once approved.</p>
                     </div>
                     <div class="arch-arrow">↕</div>
                     <div class="arch-row">
-                        <div class="arch-box"><h4>9-Layer Tool Policy</h4><p>Profile → Provider → Global → Per-Agent → Group → Sandbox → Subagent. A deny at any layer blocks the tool.</p></div>
-                        <div class="arch-box"><h4>System Prompt Builder</h4><p>9 dynamic sections: Identity, Capabilities, Tools, Safety, Context, Monitoring, Incidents, Playbooks, Time.</p></div>
+                        <div class="arch-box"><h4>Tool Policy Engine</h4><p>Profile-based access control (minimal / sre / full). Config-driven approval lists allow runtime toggling of which tools need human sign-off before execution.</p></div>
+                        <div class="arch-box"><h4>Dynamic System Prompt</h4><p>11 sections assembled per-session: Identity, Capabilities, Tools, Safety, Context, Monitoring Rules, Incident Protocol, Playbook Standards, Learning Insights, Semantic Recommendations, and Time.</p></div>
                     </div>
                     <div class="arch-arrow">↕</div>
                     <div class="arch-row">
-                        <div class="arch-box"><h4>12 SRE Tools</h4><p>health_check, metrics_query, log_search, kubectl, docker, ssh, service_restart, playbook_run, incident &amp; alert management, diagnostics.</p></div>
-                        <div class="arch-box"><h4>Playbook Engine</h4><p>YAML runbooks with ordered steps, retry/abort handling, dry-run support, and variable parameterization.</p></div>
+                        <div class="arch-box"><h4>14 SRE Tools</h4><p>health_check, metrics_query, log_search, kubectl_exec, docker_exec, ssh_exec, service_restart, playbook_run, playbook_create, incident_manage, alert_manage, network_diag, system_info, learning_query.</p></div>
+                        <div class="arch-box"><h4>Playbook Engine (DB-Backed)</h4><p>Database-persisted runbooks with ordered steps, multi-severity triggers, retry/abort/continue handling, auto-trigger on incidents, dry-run support, enable/disable toggle, and playbook authoring standards enforced by the LLM.</p></div>
                     </div>
                     <div class="arch-arrow">↕</div>
                     <div class="arch-row">
-                        <div class="arch-box"><h4>Monitoring Service</h4><p>Scheduled health checks, state transition detection, anomaly detection, auto-incident creation.</p></div>
-                        <div class="arch-box"><h4>Notification Channels</h4><p>Slack, PagerDuty, Email, WebSocket broadcasts for real-time alerts.</p></div>
+                        <div class="arch-box"><h4>Monitoring Service</h4><p>Per-service scheduled health checks, state transition detection (HEALTHY/UNHEALTHY), LLM-driven severity triage, auto-incident creation, auto-playbook triggering, and auto-resolution tracking.</p></div>
+                        <div class="arch-box"><h4>Incident &amp; RCA Pipeline</h4><p>Auto-created incidents with LLM-classified severity. On resolution: auto-generates a comprehensive Root Cause Analysis report (summary, timeline, root cause, impact, lessons learned, preventive measures) sent for human review.</p></div>
+                    </div>
+                    <div class="arch-arrow">↕</div>
+                    <div class="arch-row">
+                        <div class="arch-box" style="border-color:var(--green);">
+                            <h4>Learning &amp; Memory System</h4>
+                            <p>Every resolution (chat, playbook, auto-recovery) is recorded. The system tracks tool sequences, success rates, and resolution times per service. This data feeds back into the system prompt so the LLM makes better decisions over time.</p>
+                        </div>
+                        <div class="arch-box" style="border-color:var(--green);">
+                            <h4>Vector Embeddings (Semantic Search)</h4>
+                            <p>Incidents, resolutions, and RCA reports are embedded via OpenAI text-embedding-3-small. In-memory cosine similarity enables fast semantic search, cross-service pattern transfer, and near-duplicate playbook detection — replacing expensive multi-LLM-call keyword search.</p>
+                        </div>
+                    </div>
+                    <div class="arch-arrow">↕</div>
+                    <div class="arch-row">
+                        <div class="arch-box"><h4>Proactive Risk Assessment</h4><p>Every 30 minutes, the LLM analyzes recent incidents, metrics, and patterns to identify emerging risks before they become incidents. Risks are surfaced on the dashboard for human review.</p></div>
+                        <div class="arch-box"><h4>AI Playbook Suggestions</h4><p>Frequency-based pattern detection + LLM-powered analysis identify recurring resolution patterns and suggest new automated playbooks. Suggestions go through human approval before activation.</p></div>
                     </div>
                 </div>
             </div>
+
+            <!-- Agentic Loop -->
             <div class="card">
-                <div class="card-title">Agentic Loop (How the Agent Thinks)</div>
+                <div class="card-title">The Agentic Loop (How the Agent Thinks)</div>
                 <ol style="padding-left:20px;font-size:13px;color:var(--text-dim);line-height:2;">
-                    <li><strong style="color:var(--text)">User sends a message</strong> (e.g., "Check health of all services")</li>
-                    <li><strong style="color:var(--text)">System prompt is assembled</strong> with current context (active incidents, unhealthy services, available tools)</li>
-                    <li><strong style="color:var(--text)">Message + tools sent to LLM</strong> (OpenAI GPT-4o or compatible)</li>
-                    <li><strong style="color:var(--text)">LLM responds</strong> with text and/or tool calls</li>
-                    <li><strong style="color:var(--text)">Tool calls are policy-checked</strong> against the 9-layer engine, then executed</li>
-                    <li><strong style="color:var(--text)">Results appended to conversation</strong>, sent back to LLM</li>
-                    <li><strong style="color:var(--text)">Loop continues</strong> until the LLM has enough info and responds with a final answer (max 25 iterations)</li>
+                    <li><strong style="color:var(--text)">User sends a message</strong> (e.g., "Check health of all services" or "What caused the MySQL outage?")</li>
+                    <li><strong style="color:var(--text)">Dynamic system prompt assembled</strong> — includes current context (active incidents, unhealthy services), learning insights from past resolutions, semantic recommendations from similar problems across services, and playbook authoring standards</li>
+                    <li><strong style="color:var(--text)">Message + 14 tool definitions sent to LLM</strong> (OpenAI GPT-4o)</li>
+                    <li><strong style="color:var(--text)">LLM responds</strong> with reasoning text and/or tool calls</li>
+                    <li><strong style="color:var(--text)">Tool calls are policy-checked</strong> — if the tool requires human approval, an approval request is created and the loop pauses until a human approves via the UI</li>
+                    <li><strong style="color:var(--text)">Approved tools are executed</strong>, results appended to conversation and sent back to LLM</li>
+                    <li><strong style="color:var(--text)">Loop continues</strong> (max 25 iterations). If the conversation approaches the 128K token limit, it is intelligently compacted using LLM-based summarization that preserves key facts, tool results, and decisions</li>
+                    <li><strong style="color:var(--text)">On completion</strong>, the tool sequence is recorded in the learning system. If the session resolved an incident, the resolution pattern informs future recommendations</li>
                 </ol>
             </div>
+
+            <!-- Learning Loop -->
             <div class="card">
-                <div class="card-title">Key Differences from a Regular Chatbot</div>
+                <div class="card-title">The Learning Loop (How the Agent Improves)</div>
                 <div style="font-size:13px;color:var(--text-dim);line-height:1.8;">
-                    <p>✦ <strong style="color:var(--text)">Autonomous</strong> — it doesn't just answer questions, it takes actions (runs health checks, creates incidents, restarts services)</p>
-                    <p>✦ <strong style="color:var(--text)">Tool-using</strong> — 12 specialized SRE tools it can call to interact with real infrastructure</p>
-                    <p>✦ <strong style="color:var(--text)">Policy-governed</strong> — 9-layer security model prevents unauthorized actions</p>
-                    <p>✦ <strong style="color:var(--text)">Proactive</strong> — monitoring service runs in background, auto-creates incidents, auto-triggers playbooks</p>
-                    <p>✦ <strong style="color:var(--text)">Memory</strong> — knowledge base of past incidents helps resolve recurring issues faster</p>
+                    <p style="margin-bottom:12px;">The agent learns from every interaction through a closed feedback loop:</p>
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px;">
+                        <div style="background:var(--bg-input);padding:12px;border-radius:var(--radius-sm);border-left:3px solid var(--accent);">
+                            <strong style="color:var(--text);display:block;margin-bottom:4px;">1. Record</strong>
+                            Three channels feed resolution data: chat sessions (tool sequences the LLM chose), playbook executions (automated steps), and monitoring auto-recovery (service self-healed).
+                        </div>
+                        <div style="background:var(--bg-input);padding:12px;border-radius:var(--radius-sm);border-left:3px solid var(--green);">
+                            <strong style="color:var(--text);display:block;margin-bottom:4px;">2. Embed</strong>
+                            Each resolution and incident is embedded as a 1536-dimension vector (OpenAI text-embedding-3-small). Vectors are stored in H2 and loaded into an in-memory index for fast cosine similarity lookup.
+                        </div>
+                        <div style="background:var(--bg-input);padding:12px;border-radius:var(--radius-sm);border-left:3px solid var(--blue);">
+                            <strong style="color:var(--text);display:block;margin-bottom:4px;">3. Feed Back</strong>
+                            On the next chat session, the system prompt includes: top resolution patterns, per-service success rates, and semantic recommendations from similar problems — even across different services.
+                        </div>
+                    </div>
+                    <p><strong style="color:var(--text);">Cross-service transfer:</strong> When the agent resolves a MySQL timeout, that knowledge helps resolve a PostgreSQL timeout in the future, because the embeddings capture semantic similarity rather than relying on exact service name matches.</p>
+                </div>
+            </div>
+
+            <!-- Human-in-the-Loop -->
+            <div class="card">
+                <div class="card-title">Human-in-the-Loop Controls</div>
+                <div style="font-size:13px;color:var(--text-dim);line-height:1.8;">
+                    <p style="margin-bottom:8px;">The agent is autonomous but not unsupervised. Humans stay in control at critical points:</p>
+                    <p>&#x25B8; <strong style="color:var(--text)">Tool Approval</strong> — Sensitive tools (service_restart, ssh_exec, playbook_run) require human approval. The approval list is configurable at runtime via the UI. The agentic loop pauses and auto-resumes once approved.</p>
+                    <p>&#x25B8; <strong style="color:var(--text)">RCA Review</strong> — After every resolved incident, the LLM generates a detailed Root Cause Analysis. It is sent for human review where the reviewer can edit, approve, or reject (with optional regeneration).</p>
+                    <p>&#x25B8; <strong style="color:var(--text)">Playbook Suggestions</strong> — When the AI identifies recurring patterns worth automating, it proposes new playbooks. Humans review, approve, or dismiss each suggestion before it becomes active.</p>
+                    <p>&#x25B8; <strong style="color:var(--text)">Risk Assessment</strong> — Proactive risk analysis runs every 30 minutes. Identified risks are surfaced on the dashboard for human triage — the agent flags, the human decides.</p>
+                </div>
+            </div>
+
+            <!-- Key Capabilities -->
+            <div class="card">
+                <div class="card-title">What Makes This Agent Different</div>
+                <div style="font-size:13px;color:var(--text-dim);line-height:1.8;">
+                    <p>&#x2726; <strong style="color:var(--text)">Autonomous &amp; Tool-Using</strong> — 14 specialized SRE tools to interact with real infrastructure: health checks, Docker/Kubernetes management, SSH, service restarts, playbook execution, incident management, network diagnostics, and more</p>
+                    <p>&#x2726; <strong style="color:var(--text)">Self-Improving</strong> — Learns from every resolution across three channels. Success rates and tool patterns are tracked per service and fed back into the LLM's context. Suggests new playbooks from recurring patterns</p>
+                    <p>&#x2726; <strong style="color:var(--text)">Semantic Memory</strong> — Vector embeddings (OpenAI text-embedding-3-small) enable meaning-based search across incidents, resolutions, and RCA reports. Replaces expensive multi-LLM-call keyword search with fast cosine similarity</p>
+                    <p>&#x2726; <strong style="color:var(--text)">LLM-Driven Intelligence</strong> — Severity triage, incident search ranking, RCA generation, risk assessment, playbook suggestions, and conversation compaction are all powered by LLM reasoning, not hardcoded rules</p>
+                    <p>&#x2726; <strong style="color:var(--text)">Proactive</strong> — Monitoring runs in the background with per-service configurable intervals. Unhealthy services trigger LLM-classified incidents, auto-fire matching playbooks, and on recovery auto-generate RCA reports</p>
+                    <p>&#x2726; <strong style="color:var(--text)">Human-in-the-Loop</strong> — Approval workflow for sensitive tools, RCA review process, playbook suggestion approval, and risk triage keep humans in control of critical decisions</p>
+                    <p>&#x2726; <strong style="color:var(--text)">Policy-Governed</strong> — Profile-based tool access with runtime-toggleable approval requirements prevent unauthorized actions. Full audit trail of every tool execution and system event</p>
                 </div>
             </div>
         </div>
