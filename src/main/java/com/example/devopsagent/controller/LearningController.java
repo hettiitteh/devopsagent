@@ -47,6 +47,18 @@ public class LearningController {
         ));
     }
 
+    // ─── Executive Summary ───
+
+    @GetMapping("/executive-summary")
+    public ResponseEntity<Map<String, Object>> getExecutiveSummary() {
+        return ResponseEntity.ok(learningService.getExecutiveSummary());
+    }
+
+    @PostMapping("/executive-summary/refresh")
+    public ResponseEntity<Map<String, Object>> refreshExecutiveSummary() {
+        return ResponseEntity.ok(learningService.refreshExecutiveSummary());
+    }
+
     // ─── CRUD for Resolution Records ───
 
     /**

@@ -163,4 +163,16 @@ public class RcaController {
     public ResponseEntity<Map<String, Object>> getPendingCount() {
         return ResponseEntity.ok(Map.of("count", rcaService.getPendingReviewCount()));
     }
+
+    // ─── Executive Summary ───
+
+    @GetMapping("/executive-summary")
+    public ResponseEntity<Map<String, Object>> getRcaExecutiveSummary() {
+        return ResponseEntity.ok(rcaService.getRcaExecutiveSummary());
+    }
+
+    @PostMapping("/executive-summary/refresh")
+    public ResponseEntity<Map<String, Object>> refreshRcaExecutiveSummary() {
+        return ResponseEntity.ok(rcaService.refreshRcaExecutiveSummary());
+    }
 }

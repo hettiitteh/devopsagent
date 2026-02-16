@@ -1,5 +1,7 @@
 package com.example.devopsagent.service;
 
+import com.example.devopsagent.agent.AgentMessage;
+import com.example.devopsagent.agent.LlmClient;
 import com.example.devopsagent.domain.ResolutionRecord;
 import com.example.devopsagent.embedding.EmbeddingService;
 import com.example.devopsagent.embedding.VectorStore;
@@ -28,19 +30,25 @@ public class LearningService {
     private final AuditService auditService;
     private final EmbeddingService embeddingService;
     private final VectorStore vectorStore;
+    private final LlmClient llmClient;
+
+    private volatile String cachedSummary;
+    private volatile Instant cachedSummaryAt;
 
     public LearningService(ResolutionRecordRepository resolutionRepository,
                            IncidentRepository incidentRepository,
                            ObjectMapper objectMapper,
                            AuditService auditService,
                            @Lazy EmbeddingService embeddingService,
-                           @Lazy VectorStore vectorStore) {
+                           @Lazy VectorStore vectorStore,
+                           @Lazy LlmClient llmClient) {
         this.resolutionRepository = resolutionRepository;
         this.incidentRepository = incidentRepository;
         this.objectMapper = objectMapper;
         this.auditService = auditService;
         this.embeddingService = embeddingService;
         this.vectorStore = vectorStore;
+        this.llmClient = llmClient;
     }
 
     /**
@@ -206,5 +214,117 @@ public class LearningService {
             log.warn("Semantic recommendation failed: {}", e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * Get the executive summary (returns cached version if available).
+     */
+    public Map<String, Object> getExecutiveSummary() {
+        if (cachedSummary != null && cachedSummaryAt != null) {
+            return Map.of("summary", cachedSummary, "generatedAt", cachedSummaryAt.toString());
+        }
+        return refreshExecutiveSummary();
+    }
+
+    /**
+     * Force-refresh the executive summary by calling the LLM with all learning data.
+     */
+    public Map<String, Object> refreshExecutiveSummary() {
+        try {
+            Map<String, Object> insights = getInsights();
+            List<ResolutionRecord> recentRecords = resolutionRepository.findAll().stream()
+                    .sorted(Comparator.comparing(ResolutionRecord::getCreatedAt).reversed())
+                    .limit(20)
+                    .toList();
+
+            if (recentRecords.isEmpty()) {
+                cachedSummary = "No resolution records found yet. The agent will start learning from incidents, playbooks, and monitoring as they occur.";
+                cachedSummaryAt = Instant.now();
+                return Map.of("summary", cachedSummary, "generatedAt", cachedSummaryAt.toString());
+            }
+
+            String prompt = buildLearningsSummaryPrompt(insights, recentRecords);
+
+            List<AgentMessage> messages = List.of(
+                    AgentMessage.system(prompt),
+                    AgentMessage.user("Generate the executive summary now.")
+            );
+            AgentMessage response = llmClient.chat(messages, List.of());
+            String content = response.getContent();
+
+            if (content != null && !content.isBlank()) {
+                cachedSummary = content.trim();
+            } else {
+                cachedSummary = "Summary generation returned empty content. Please try again.";
+            }
+            cachedSummaryAt = Instant.now();
+
+            log.info("Learnings executive summary refreshed");
+            return Map.of("summary", cachedSummary, "generatedAt", cachedSummaryAt.toString());
+
+        } catch (Exception e) {
+            log.error("Failed to generate learnings executive summary: {}", e.getMessage());
+            String fallback = cachedSummary != null ? cachedSummary : "Failed to generate summary: " + e.getMessage();
+            Instant ts = cachedSummaryAt != null ? cachedSummaryAt : Instant.now();
+            return Map.of("summary", fallback, "generatedAt", ts.toString());
+        }
+    }
+
+    private String buildLearningsSummaryPrompt(Map<String, Object> insights, List<ResolutionRecord> recentRecords) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("""
+                You are an expert SRE analyst. Based on the resolution data below, produce a concise \
+                executive summary (3-5 paragraphs) covering:
+                1. Overall operational health and resolution effectiveness
+                2. Top performing and struggling services
+                3. Emerging patterns and trends
+                4. Actionable recommendations for improvement
+                
+                Write in a professional, analytical tone. Do not use JSON -- write natural prose.
+                
+                """);
+
+        sb.append("## Aggregate Statistics\n");
+        sb.append(String.format("- Total resolutions: %s\n", insights.getOrDefault("total_resolutions", 0)));
+        sb.append(String.format("- Successful: %s\n", insights.getOrDefault("total_successful", 0)));
+        sb.append(String.format("- Overall success rate: %.1f%%\n",
+                insights.containsKey("overall_success_rate") ? ((Number) insights.get("overall_success_rate")).doubleValue() : 0.0));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> serviceStats = (List<Map<String, Object>>) insights.get("service_stats");
+        if (serviceStats != null && !serviceStats.isEmpty()) {
+            sb.append("\n## Per-Service Statistics\n");
+            for (Map<String, Object> m : serviceStats) {
+                sb.append(String.format("- %s: %s total, %s successful, %.1f%% rate, avg %sms\n",
+                        m.getOrDefault("service", "?"),
+                        m.getOrDefault("total", 0),
+                        m.getOrDefault("successful", 0),
+                        m.containsKey("success_rate") ? ((Number) m.get("success_rate")).doubleValue() : 0.0,
+                        m.getOrDefault("avg_resolution_ms", 0)));
+            }
+        }
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> patternList = (List<Map<String, Object>>) insights.get("patterns");
+        if (patternList != null && !patternList.isEmpty()) {
+            sb.append("\n## Top Resolution Patterns\n");
+            for (Map<String, Object> m : patternList) {
+                sb.append(String.format("- %s (used %s times)\n",
+                        m.getOrDefault("sequence", "?"), m.getOrDefault("count", 0)));
+            }
+        }
+
+        sb.append("\n## Recent Resolution Records (newest first)\n");
+        for (ResolutionRecord r : recentRecords) {
+            sb.append(String.format("- [%s] %s | service=%s | tools=%s | success=%s | %dms\n",
+                    r.getCreatedAt() != null ? r.getCreatedAt().toString() : "?",
+                    r.getIncidentTitle() != null ? r.getIncidentTitle() : "untitled",
+                    r.getService() != null ? r.getService() : "?",
+                    r.getToolSequence() != null ? r.getToolSequence() : "[]",
+                    r.isSuccess(),
+                    r.getResolutionTimeMs()));
+        }
+
+        return sb.toString();
     }
 }

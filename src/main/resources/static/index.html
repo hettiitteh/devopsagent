@@ -578,6 +578,18 @@
                 <p>Resolution records captured from incidents, playbooks, and monitoring. Edit or add manual learnings to improve the agent.</p>
             </div>
 
+            <!-- Executive Summary -->
+            <div class="card" id="learning-exec-summary-card" style="margin-bottom:20px;padding:20px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                    <h3 style="margin:0;font-size:16px;">Executive Summary</h3>
+                    <button class="btn btn-secondary" id="learning-exec-refresh-btn" onclick="refreshLearningExecSummary()" style="font-size:12px;padding:4px 12px;">Refresh</button>
+                </div>
+                <div id="learning-exec-summary-content" style="white-space:pre-wrap;font-size:13px;line-height:1.6;color:var(--text);">
+                    No summary generated yet. Click Refresh to generate.
+                </div>
+                <div id="learning-exec-summary-time" style="font-size:11px;color:var(--text-dim);margin-top:10px;"></div>
+            </div>
+
             <!-- Summary Cards -->
             <div id="learnings-summary" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;">
                 <div class="card" style="text-align:center;padding:16px;">
@@ -732,6 +744,18 @@
                 <h2>RCA Reports</h2>
                 <p>Root Cause Analysis reports generated after incident resolution — review, edit, and approve</p>
             </div>
+            <!-- RCA Executive Summary -->
+            <div class="card" id="rca-exec-summary-card" style="margin-bottom:20px;padding:20px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                    <h3 style="margin:0;font-size:16px;">Executive Summary</h3>
+                    <button class="btn btn-secondary" id="rca-exec-refresh-btn" onclick="refreshRcaExecSummary()" style="font-size:12px;padding:4px 12px;">Refresh</button>
+                </div>
+                <div id="rca-exec-summary-content" style="white-space:pre-wrap;font-size:13px;line-height:1.6;color:var(--text);">
+                    No summary generated yet. Click Refresh to generate.
+                </div>
+                <div id="rca-exec-summary-time" style="font-size:11px;color:var(--text-dim);margin-top:10px;"></div>
+            </div>
+
             <div class="stat-grid" id="rca-stats">
                 <div class="stat-card"><div class="stat-icon blue">📄</div><div><div class="stat-value" id="rca-stat-total">0</div><div class="stat-label">Total RCAs</div></div></div>
                 <div class="stat-card"><div class="stat-icon yellow">⏳</div><div><div class="stat-value" id="rca-stat-pending">0</div><div class="stat-label">Pending Review</div></div></div>
@@ -2662,6 +2686,86 @@ async function loadDashboardRisks() {
     }
 }
 
+// ─── Executive Summaries ───
+
+async function loadLearningExecSummary() {
+    const contentEl = document.getElementById('learning-exec-summary-content');
+    const timeEl = document.getElementById('learning-exec-summary-time');
+    try {
+        const data = await api('/api/learning/executive-summary');
+        if (data && data.summary) {
+            contentEl.textContent = data.summary;
+            timeEl.textContent = data.generatedAt ? 'Generated: ' + new Date(data.generatedAt).toLocaleString() : '';
+        }
+    } catch (e) {
+        contentEl.textContent = 'Failed to load executive summary.';
+        timeEl.textContent = '';
+    }
+}
+
+async function refreshLearningExecSummary() {
+    const btn = document.getElementById('learning-exec-refresh-btn');
+    const contentEl = document.getElementById('learning-exec-summary-content');
+    const timeEl = document.getElementById('learning-exec-summary-time');
+    btn.disabled = true;
+    btn.textContent = 'Generating...';
+    contentEl.textContent = 'Generating summary with AI...';
+    timeEl.textContent = '';
+    try {
+        const data = await api('/api/learning/executive-summary/refresh', { method: 'POST' });
+        if (data && data.summary) {
+            contentEl.textContent = data.summary;
+            timeEl.textContent = data.generatedAt ? 'Generated: ' + new Date(data.generatedAt).toLocaleString() : '';
+        } else {
+            contentEl.textContent = 'Summary generation returned empty content.';
+        }
+    } catch (e) {
+        contentEl.textContent = 'Failed to generate executive summary.';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Refresh';
+    }
+}
+
+async function loadRcaExecSummary() {
+    const contentEl = document.getElementById('rca-exec-summary-content');
+    const timeEl = document.getElementById('rca-exec-summary-time');
+    try {
+        const data = await api('/api/rca/executive-summary');
+        if (data && data.summary) {
+            contentEl.textContent = data.summary;
+            timeEl.textContent = data.generatedAt ? 'Generated: ' + new Date(data.generatedAt).toLocaleString() : '';
+        }
+    } catch (e) {
+        contentEl.textContent = 'Failed to load executive summary.';
+        timeEl.textContent = '';
+    }
+}
+
+async function refreshRcaExecSummary() {
+    const btn = document.getElementById('rca-exec-refresh-btn');
+    const contentEl = document.getElementById('rca-exec-summary-content');
+    const timeEl = document.getElementById('rca-exec-summary-time');
+    btn.disabled = true;
+    btn.textContent = 'Generating...';
+    contentEl.textContent = 'Generating summary with AI...';
+    timeEl.textContent = '';
+    try {
+        const data = await api('/api/rca/executive-summary/refresh', { method: 'POST' });
+        if (data && data.summary) {
+            contentEl.textContent = data.summary;
+            timeEl.textContent = data.generatedAt ? 'Generated: ' + new Date(data.generatedAt).toLocaleString() : '';
+        } else {
+            contentEl.textContent = 'Summary generation returned empty content.';
+        }
+    } catch (e) {
+        contentEl.textContent = 'Failed to generate executive summary.';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Refresh';
+    }
+}
+
 // ─── Init ───
 connectWs();
 refreshDashboard();
@@ -2671,6 +2775,7 @@ setTimeout(() => {
     loadRcaReports(); refreshRcaBadge();
     loadRisks(); refreshRiskBadge(); loadDashboardRisks();
     loadEmbeddingStatus();
+    loadLearningExecSummary(); loadRcaExecSummary();
 }, 500);
 setInterval(refreshDashboard, 15000);
 setInterval(refreshApprovals, 30000);

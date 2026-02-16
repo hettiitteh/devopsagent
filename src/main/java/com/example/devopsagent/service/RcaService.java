@@ -44,6 +44,9 @@ public class RcaService {
     private final EmbeddingService embeddingService;
     private final VectorStore vectorStore;
 
+    private volatile String cachedRcaSummary;
+    private volatile Instant cachedRcaSummaryAt;
+
     /**
      * Asynchronously generate a comprehensive RCA for a resolved incident.
      * 1. Save a placeholder with GENERATING status
@@ -202,6 +205,115 @@ public class RcaService {
      */
     public long getPendingReviewCount() {
         return rcaRepository.countByStatus(RcaReport.RcaStatus.PENDING_REVIEW);
+    }
+
+    // ─── Executive Summary ───
+
+    /**
+     * Get the RCA executive summary (returns cached version if available).
+     */
+    public Map<String, Object> getRcaExecutiveSummary() {
+        if (cachedRcaSummary != null && cachedRcaSummaryAt != null) {
+            return Map.of("summary", cachedRcaSummary, "generatedAt", cachedRcaSummaryAt.toString());
+        }
+        return refreshRcaExecutiveSummary();
+    }
+
+    /**
+     * Force-refresh the RCA executive summary by calling the LLM with all RCA data.
+     */
+    public Map<String, Object> refreshRcaExecutiveSummary() {
+        try {
+            List<RcaReport> allRcas = rcaRepository.findAllByOrderByGeneratedAtDesc();
+
+            if (allRcas.isEmpty()) {
+                cachedRcaSummary = "No RCA reports generated yet. RCA reports are automatically created when incidents are resolved.";
+                cachedRcaSummaryAt = Instant.now();
+                return Map.of("summary", cachedRcaSummary, "generatedAt", cachedRcaSummaryAt.toString());
+            }
+
+            String prompt = buildRcaSummaryPrompt(allRcas);
+
+            List<AgentMessage> messages = List.of(
+                    AgentMessage.system(prompt),
+                    AgentMessage.user("Generate the RCA executive summary now.")
+            );
+            AgentMessage response = llmClient.chat(messages, List.of());
+            String content = response.getContent();
+
+            if (content != null && !content.isBlank()) {
+                cachedRcaSummary = content.trim();
+            } else {
+                cachedRcaSummary = "Summary generation returned empty content. Please try again.";
+            }
+            cachedRcaSummaryAt = Instant.now();
+
+            log.info("RCA executive summary refreshed");
+            return Map.of("summary", cachedRcaSummary, "generatedAt", cachedRcaSummaryAt.toString());
+
+        } catch (Exception e) {
+            log.error("Failed to generate RCA executive summary: {}", e.getMessage());
+            String fallback = cachedRcaSummary != null ? cachedRcaSummary : "Failed to generate summary: " + e.getMessage();
+            Instant ts = cachedRcaSummaryAt != null ? cachedRcaSummaryAt : Instant.now();
+            return Map.of("summary", fallback, "generatedAt", ts.toString());
+        }
+    }
+
+    private String buildRcaSummaryPrompt(List<RcaReport> allRcas) {
+        long pending = allRcas.stream().filter(r -> r.getStatus() == RcaReport.RcaStatus.PENDING_REVIEW).count();
+        long approved = allRcas.stream().filter(r -> r.getStatus() == RcaReport.RcaStatus.APPROVED).count();
+        long rejected = allRcas.stream().filter(r -> r.getStatus() == RcaReport.RcaStatus.REJECTED).count();
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("""
+                You are an expert SRE analyst. Based on the Root Cause Analysis reports below, produce \
+                a concise executive summary (3-5 paragraphs) covering:
+                1. Recurring root causes across services and their frequency
+                2. Most impactful incidents and their systemic implications
+                3. Common lessons learned and organizational takeaways
+                4. Top preventive measures that should be prioritized
+                
+                Write in a professional, analytical tone. Do not use JSON -- write natural prose.
+                
+                """);
+
+        sb.append("## RCA Report Statistics\n");
+        sb.append(String.format("- Total RCA reports: %d\n", allRcas.size()));
+        sb.append(String.format("- Pending review: %d\n", pending));
+        sb.append(String.format("- Approved: %d\n", approved));
+        sb.append(String.format("- Rejected: %d\n", rejected));
+        sb.append("\n");
+
+        // Include up to 20 most recent RCAs with details
+        List<RcaReport> rcasToInclude = allRcas.stream().limit(20).toList();
+        sb.append("## RCA Reports (newest first)\n");
+        for (RcaReport r : rcasToInclude) {
+            sb.append(String.format("\n### %s [%s] — %s\n",
+                    r.getIncidentTitle() != null ? r.getIncidentTitle() : "Untitled",
+                    r.getSeverity() != null ? r.getSeverity() : "?",
+                    r.getStatus().name()));
+            sb.append(String.format("- Service: %s\n", r.getService() != null ? r.getService() : "unknown"));
+            sb.append(String.format("- Resolution time: %s\n", formatDuration(r.getResolutionTimeMs())));
+            if (r.getSummary() != null) {
+                sb.append(String.format("- Summary: %s\n", truncate(r.getSummary(), 300)));
+            }
+            if (r.getRootCause() != null) {
+                sb.append(String.format("- Root Cause: %s\n", truncate(r.getRootCause(), 300)));
+            }
+            if (r.getLessonsLearned() != null) {
+                sb.append(String.format("- Lessons Learned: %s\n", truncate(r.getLessonsLearned(), 300)));
+            }
+            if (r.getPreventiveMeasures() != null) {
+                sb.append(String.format("- Preventive Measures: %s\n", truncate(r.getPreventiveMeasures(), 300)));
+            }
+        }
+
+        return sb.toString();
+    }
+
+    private String truncate(String s, int maxLen) {
+        if (s == null) return "";
+        return s.length() <= maxLen ? s : s.substring(0, maxLen) + "...";
     }
 
     // ─── Private helpers ───
