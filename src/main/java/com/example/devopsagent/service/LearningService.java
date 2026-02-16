@@ -1,12 +1,13 @@
 package com.example.devopsagent.service;
 
-import com.example.devopsagent.domain.Incident;
 import com.example.devopsagent.domain.ResolutionRecord;
+import com.example.devopsagent.embedding.EmbeddingService;
+import com.example.devopsagent.embedding.VectorStore;
 import com.example.devopsagent.repository.IncidentRepository;
 import com.example.devopsagent.repository.ResolutionRecordRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -19,13 +20,28 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class LearningService {
 
     private final ResolutionRecordRepository resolutionRepository;
     private final IncidentRepository incidentRepository;
     private final ObjectMapper objectMapper;
     private final AuditService auditService;
+    private final EmbeddingService embeddingService;
+    private final VectorStore vectorStore;
+
+    public LearningService(ResolutionRecordRepository resolutionRepository,
+                           IncidentRepository incidentRepository,
+                           ObjectMapper objectMapper,
+                           AuditService auditService,
+                           @Lazy EmbeddingService embeddingService,
+                           @Lazy VectorStore vectorStore) {
+        this.resolutionRepository = resolutionRepository;
+        this.incidentRepository = incidentRepository;
+        this.objectMapper = objectMapper;
+        this.auditService = auditService;
+        this.embeddingService = embeddingService;
+        this.vectorStore = vectorStore;
+    }
 
     /**
      * Record a resolution attempt (called when an incident is resolved via chat or playbook).
@@ -51,6 +67,9 @@ public class LearningService {
             auditService.log("system", "RESOLUTION_RECORDED", service,
                     Map.of("incident_id", incidentId != null ? incidentId : "",
                            "tools", toolsUsed, "success", success));
+
+            // Embed the resolution record for semantic similarity search
+            embeddingService.embedResolutionAsync(record);
         } catch (Exception e) {
             log.error("Failed to record resolution: {}", e.getMessage());
         }
@@ -142,5 +161,50 @@ public class LearningService {
                 "patterns", topPatterns,
                 "service_stats", serviceStats
         );
+    }
+
+    /**
+     * Semantic recommendation: embed the problem description and find the most
+     * successful tool sequences from semantically similar past resolutions.
+     * Enables cross-service pattern transfer (e.g. MySQL timeout informs Postgres timeout).
+     *
+     * @return human-readable recommendation string, or null if nothing found
+     */
+    public String getSemanticRecommendation(String problemDescription) {
+        if (!embeddingService.isEnabled() || problemDescription == null || problemDescription.isBlank()) {
+            return null;
+        }
+
+        try {
+            float[] queryVec = embeddingService.embed(problemDescription);
+            if (queryVec == null) return null;
+
+            List<VectorStore.ScoredResult> similar = vectorStore.findSimilar(queryVec, "resolution", 5, 0.65);
+            if (similar.isEmpty()) return null;
+
+            // Collect the successful tool sequences from the top matches
+            StringBuilder sb = new StringBuilder("Semantically similar past resolutions:\n");
+            int count = 0;
+            for (VectorStore.ScoredResult result : similar) {
+                Optional<ResolutionRecord> record = resolutionRepository.findById(result.entityId());
+                if (record.isPresent() && record.get().isSuccess()) {
+                    ResolutionRecord r = record.get();
+                    try {
+                        List<String> tools = objectMapper.readValue(r.getToolSequence(), List.class);
+                        sb.append(String.format("  - [%.0f%% match] Service '%s': %s (%dms)\n",
+                                result.score() * 100,
+                                r.getService() != null ? r.getService() : "unknown",
+                                String.join(" -> ", tools),
+                                r.getResolutionTimeMs()));
+                        count++;
+                    } catch (Exception ignored) {}
+                }
+            }
+
+            return count > 0 ? sb.toString() : null;
+        } catch (Exception e) {
+            log.warn("Semantic recommendation failed: {}", e.getMessage());
+            return null;
+        }
     }
 }

@@ -5,6 +5,8 @@ import com.example.devopsagent.agent.LlmClient;
 import com.example.devopsagent.domain.Incident;
 import com.example.devopsagent.domain.RcaReport;
 import com.example.devopsagent.domain.ResolutionRecord;
+import com.example.devopsagent.embedding.EmbeddingService;
+import com.example.devopsagent.embedding.VectorStore;
 import com.example.devopsagent.gateway.GatewayWebSocketHandler;
 import com.example.devopsagent.memory.IncidentKnowledgeBase;
 import com.example.devopsagent.repository.RcaReportRepository;
@@ -39,6 +41,8 @@ public class RcaService {
     private final GatewayWebSocketHandler gatewayHandler;
     private final AuditService auditService;
     private final ObjectMapper objectMapper;
+    private final EmbeddingService embeddingService;
+    private final VectorStore vectorStore;
 
     /**
      * Asynchronously generate a comprehensive RCA for a resolved incident.
@@ -103,7 +107,10 @@ public class RcaService {
             rca.setStatus(RcaReport.RcaStatus.PENDING_REVIEW);
             rcaRepository.save(rca);
 
-            // 5. Broadcast for review
+            // 5. Embed the RCA for future similarity search
+            embeddingService.embedRcaAsync(rca);
+
+            // 6. Broadcast for review
             broadcastRcaGenerated(rca);
 
             auditService.log("system", "RCA_GENERATED", rca.getId(),
@@ -270,6 +277,35 @@ public class RcaService {
             }
         } catch (Exception e) {
             log.warn("Failed to fetch similar incidents for RCA: {}", e.getMessage());
+        }
+
+        // Similar past RCA reports (embedding-based) for deeper pattern recognition
+        try {
+            if (embeddingService.isEnabled()) {
+                String queryText = incident.getTitle() + " " +
+                        (incident.getDescription() != null ? incident.getDescription() : "");
+                float[] queryVec = embeddingService.embed(queryText);
+                if (queryVec != null) {
+                    List<VectorStore.ScoredResult> similarRcas = vectorStore.findSimilar(queryVec, "rca", 3, 0.7);
+                    if (!similarRcas.isEmpty()) {
+                        prompt.append("## Similar Past RCA Reports\n");
+                        for (VectorStore.ScoredResult result : similarRcas) {
+                            Optional<RcaReport> pastRca = rcaRepository.findById(result.entityId());
+                            if (pastRca.isPresent()) {
+                                RcaReport r = pastRca.get();
+                                prompt.append(String.format("- [%.0f%% match] %s — Root cause: %s, Lessons: %s\n",
+                                        result.score() * 100,
+                                        r.getIncidentTitle() != null ? r.getIncidentTitle() : "unknown",
+                                        r.getRootCause() != null ? r.getRootCause().substring(0, Math.min(200, r.getRootCause().length())) : "unknown",
+                                        r.getLessonsLearned() != null ? r.getLessonsLearned().substring(0, Math.min(200, r.getLessonsLearned().length())) : "unknown"));
+                            }
+                        }
+                        prompt.append("\n");
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to fetch similar RCAs for prompt: {}", e.getMessage());
         }
 
         // Task

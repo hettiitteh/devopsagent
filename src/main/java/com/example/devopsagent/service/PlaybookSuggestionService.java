@@ -5,6 +5,7 @@ import com.example.devopsagent.agent.LlmClient;
 import com.example.devopsagent.config.AgentProperties;
 import com.example.devopsagent.domain.PlaybookSuggestion;
 import com.example.devopsagent.domain.ResolutionRecord;
+import com.example.devopsagent.embedding.EmbeddingService;
 import com.example.devopsagent.playbook.Playbook;
 import com.example.devopsagent.playbook.PlaybookEngine;
 import com.example.devopsagent.repository.PlaybookSuggestionRepository;
@@ -39,6 +40,7 @@ public class PlaybookSuggestionService {
     private final LlmClient llmClient;
     private final AgentProperties agentProperties;
     private final ObjectMapper objectMapper;
+    private final EmbeddingService embeddingService;
 
     private static final int MIN_FREQUENCY = 2; // Minimum times a pattern must appear
 
@@ -407,6 +409,8 @@ public class PlaybookSuggestionService {
 
     /**
      * Checks if a tool sequence already matches an existing playbook.
+     * Uses exact list comparison first, then embedding similarity as a fallback
+     * to detect near-duplicate sequences (e.g. same tools in slightly different order).
      */
     private boolean matchesExistingPlaybook(String toolSequenceJson) {
         List<String> tools = parseToolSequence(toolSequenceJson);
@@ -415,8 +419,39 @@ public class PlaybookSuggestionService {
             List<String> pbTools = pb.getSteps().stream()
                     .map(Playbook.Step::getTool)
                     .toList();
+            // Exact match
             if (pbTools.equals(tools)) return true;
         }
+
+        // Embedding similarity fallback: check if tool sequence is semantically
+        // very close to any existing playbook's tool list (cosine > 0.92)
+        if (embeddingService.isEnabled()) {
+            try {
+                String candidateText = "Tools: " + String.join(", ", tools);
+                float[] candidateVec = embeddingService.embed(candidateText);
+                if (candidateVec != null) {
+                    for (Playbook pb : playbookEngine.getAllPlaybooks()) {
+                        if (pb.getSteps() == null) continue;
+                        List<String> pbTools = pb.getSteps().stream()
+                                .map(Playbook.Step::getTool)
+                                .toList();
+                        String pbText = "Tools: " + String.join(", ", pbTools);
+                        float[] pbVec = embeddingService.embed(pbText);
+                        if (pbVec != null) {
+                            double sim = EmbeddingService.cosineSimilarity(candidateVec, pbVec);
+                            if (sim > 0.92) {
+                                log.debug("Tool sequence {} is semantically similar (cosine={}) to playbook '{}' — treating as duplicate",
+                                        tools, sim, pb.getName());
+                                return true;
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("Embedding-based playbook dedup check failed: {}", e.getMessage());
+            }
+        }
+
         return false;
     }
 

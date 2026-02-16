@@ -3,8 +3,12 @@ package com.example.devopsagent.tools;
 import com.example.devopsagent.agent.AgentTool;
 import com.example.devopsagent.agent.ToolContext;
 import com.example.devopsagent.agent.ToolResult;
+import com.example.devopsagent.domain.Incident;
 import com.example.devopsagent.domain.PlaybookSuggestion;
 import com.example.devopsagent.domain.ResolutionRecord;
+import com.example.devopsagent.embedding.EmbeddingService;
+import com.example.devopsagent.embedding.VectorStore;
+import com.example.devopsagent.repository.IncidentRepository;
 import com.example.devopsagent.repository.ResolutionRecordRepository;
 import com.example.devopsagent.service.LearningService;
 import com.example.devopsagent.service.PlaybookSuggestionService;
@@ -15,6 +19,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
@@ -34,7 +39,10 @@ public class LearningQueryTool implements AgentTool {
 
     private final LearningService learningService;
     private final ResolutionRecordRepository resolutionRepository;
+    private final IncidentRepository incidentRepository;
     private final PlaybookSuggestionService suggestionService;
+    private final EmbeddingService embeddingService;
+    private final VectorStore vectorStore;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -45,7 +53,8 @@ public class LearningQueryTool implements AgentTool {
         return "Query the agent's learning system to review past resolution patterns, success rates, " +
                "and AI-suggested playbooks. Use this to understand what the agent has learned from " +
                "past incidents, find recommended approaches for a service, compare performance " +
-               "across services, or check pending playbook suggestions.";
+               "across services, check pending playbook suggestions, or find semantically similar " +
+               "incidents and resolutions using the 'similar' action with a natural language query.";
     }
 
     @Override
@@ -57,9 +66,11 @@ public class LearningQueryTool implements AgentTool {
             "type", "object",
             "properties", Map.of(
                 "action", Map.of("type", "string", "description",
-                    "Action to perform: insights, recommendations, history, suggestions, service_stats"),
+                    "Action to perform: insights, recommendations, history, suggestions, service_stats, similar"),
                 "service", Map.of("type", "string", "description",
                     "Service name (required for recommendations, history, service_stats)"),
+                "query", Map.of("type", "string", "description",
+                    "Natural language query for semantic search (required for 'similar' action)"),
                 "limit", Map.of("type", "integer", "description",
                     "Max number of records to return (default 10)", "default", 10)
             ),
@@ -71,6 +82,7 @@ public class LearningQueryTool implements AgentTool {
     public ToolResult execute(Map<String, Object> parameters, ToolContext context) {
         String action = (String) parameters.get("action");
         String service = (String) parameters.get("service");
+        String query = (String) parameters.get("query");
         int limit = parameters.containsKey("limit")
                 ? ((Number) parameters.get("limit")).intValue() : 10;
 
@@ -80,8 +92,9 @@ public class LearningQueryTool implements AgentTool {
             case "history" -> getHistory(service, limit);
             case "suggestions" -> getSuggestions();
             case "service_stats" -> getServiceStats(service);
+            case "similar" -> getSimilar(query, limit);
             default -> ToolResult.error("Unknown action: " + action +
-                    ". Use: insights, recommendations, history, suggestions, service_stats");
+                    ". Use: insights, recommendations, history, suggestions, service_stats, similar");
         };
     }
 
@@ -282,6 +295,83 @@ public class LearningQueryTool implements AgentTool {
                         r.isSuccess() ? "SUCCESS" : "FAILED",
                         r.getResolutionTimeMs() / 1000));
             }
+        }
+
+        return ToolResult.text(sb.toString());
+    }
+
+    /**
+     * Semantic similarity search: embed the query and find the most similar
+     * incidents and resolutions in the vector store.
+     */
+    private ToolResult getSimilar(String query, int limit) {
+        if (query == null || query.isBlank()) {
+            return ToolResult.error("A 'query' parameter is required for the 'similar' action. " +
+                    "Provide a natural language description of the problem or incident.");
+        }
+
+        if (!embeddingService.isEnabled()) {
+            return ToolResult.text("Embedding search is not enabled. " +
+                    "Configure devops-agent.llm.embedding.enabled=true in application.yml.");
+        }
+
+        float[] queryVec = embeddingService.embed(query);
+        if (queryVec == null) {
+            return ToolResult.error("Failed to generate embedding for the query. Check API key configuration.");
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(String.format("# Semantic Search Results for: \"%s\"\n\n", query));
+
+        // Search incidents
+        List<VectorStore.ScoredResult> incidentResults = vectorStore.findSimilar(queryVec, "incident", limit, 0.6);
+        if (!incidentResults.isEmpty()) {
+            sb.append("## Similar Incidents\n");
+            for (VectorStore.ScoredResult result : incidentResults) {
+                Optional<Incident> incident = incidentRepository.findById(result.entityId());
+                if (incident.isPresent()) {
+                    Incident inc = incident.get();
+                    sb.append(String.format("- [%.0f%% match] **%s** | Service: %s | Severity: %s | Status: %s\n",
+                            result.score() * 100,
+                            inc.getTitle(),
+                            inc.getService() != null ? inc.getService() : "unknown",
+                            inc.getSeverity(),
+                            inc.getStatus()));
+                    if (inc.getRootCause() != null) {
+                        sb.append(String.format("  Root cause: %s\n", inc.getRootCause()));
+                    }
+                }
+            }
+            sb.append("\n");
+        }
+
+        // Search resolutions
+        List<VectorStore.ScoredResult> resolutionResults = vectorStore.findSimilar(queryVec, "resolution", limit, 0.6);
+        if (!resolutionResults.isEmpty()) {
+            sb.append("## Similar Resolutions\n");
+            for (VectorStore.ScoredResult result : resolutionResults) {
+                Optional<ResolutionRecord> record = resolutionRepository.findById(result.entityId());
+                if (record.isPresent()) {
+                    ResolutionRecord r = record.get();
+                    String tools = formatToolSequence(r.getToolSequence());
+                    sb.append(String.format("- [%.0f%% match] **%s** | Service: %s | Tools: %s | %s | %ds\n",
+                            result.score() * 100,
+                            r.getIncidentTitle() != null ? r.getIncidentTitle() : "untitled",
+                            r.getService() != null ? r.getService() : "unknown",
+                            tools,
+                            r.isSuccess() ? "SUCCESS" : "FAILED",
+                            r.getResolutionTimeMs() / 1000));
+                }
+            }
+            sb.append("\n");
+        }
+
+        if (incidentResults.isEmpty() && resolutionResults.isEmpty()) {
+            sb.append("No similar incidents or resolutions found above the similarity threshold.\n");
+            sb.append("This could mean:\n");
+            sb.append("- The knowledge base is still building up (new agent)\n");
+            sb.append("- The problem is genuinely novel\n");
+            sb.append("- Try broadening your query description\n");
         }
 
         return ToolResult.text(sb.toString());

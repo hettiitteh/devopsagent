@@ -58,6 +58,11 @@ devops-agent:
     temperature: 0.1
     max-tokens: 4096
     timeout-seconds: 120
+    embedding:
+      model: text-embedding-3-small
+      dimensions: 1536
+      enabled: true
+      batch-size: 20
 
   # Monitoring settings
   monitoring:

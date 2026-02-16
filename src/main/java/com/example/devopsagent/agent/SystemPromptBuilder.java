@@ -316,19 +316,37 @@ public class SystemPromptBuilder {
     }
 
     private String buildRecommendedApproachesSection(String serviceContext) {
+        StringBuilder section = new StringBuilder();
+
+        // Exact-match recommendation (by service name)
         try {
             String recommendation = learningService.getRecommendedApproach(serviceContext);
-            if (recommendation == null || recommendation.isEmpty()) return "";
-            double successRate = learningService.getSuccessRate(serviceContext);
-            return String.format("""
+            if (recommendation != null && !recommendation.isEmpty()) {
+                double successRate = learningService.getSuccessRate(serviceContext);
+                section.append(String.format("""
                     # Recommended Approaches (from past resolutions)
                     %s
                     Success rate for this service: %.1f%%
 
-                    """, recommendation, successRate);
+                    """, recommendation, successRate));
+            }
         } catch (Exception e) {
-            return "";
+            // ignore
         }
+
+        // Semantic recommendation (cross-service, embedding-based)
+        try {
+            String semanticRec = learningService.getSemanticRecommendation(serviceContext);
+            if (semanticRec != null && !semanticRec.isEmpty()) {
+                section.append("# Cross-Service Semantic Insights\n");
+                section.append(semanticRec);
+                section.append("Consider these approaches even if from different services — the problems are semantically similar.\n\n");
+            }
+        } catch (Exception e) {
+            // ignore
+        }
+
+        return section.toString();
     }
 
     private String buildTimeSection() {

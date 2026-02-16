@@ -45,6 +45,15 @@ public class AgentProperties {
         private double temperature = 0.1;
         private int maxTokens = 4096;
         private int timeoutSeconds = 120;
+        private EmbeddingConfig embedding = new EmbeddingConfig();
+
+        @Data
+        public static class EmbeddingConfig {
+            private String model = "text-embedding-3-small";
+            private int dimensions = 1536;
+            private boolean enabled = true;
+            private int batchSize = 20;
+        }
     }
 
     @Data

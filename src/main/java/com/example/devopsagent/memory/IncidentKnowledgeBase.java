@@ -3,6 +3,8 @@ package com.example.devopsagent.memory;
 import com.example.devopsagent.agent.AgentMessage;
 import com.example.devopsagent.agent.LlmClient;
 import com.example.devopsagent.domain.Incident;
+import com.example.devopsagent.embedding.EmbeddingService;
+import com.example.devopsagent.embedding.VectorStore;
 import com.example.devopsagent.repository.IncidentRepository;
 import com.example.devopsagent.service.LearningService;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -36,20 +38,28 @@ public class IncidentKnowledgeBase {
     private final LearningService learningService;
     private final LlmClient llmClient;
     private final ObjectMapper objectMapper;
+    private final EmbeddingService embeddingService;
+    private final VectorStore vectorStore;
 
     public IncidentKnowledgeBase(IncidentRepository incidentRepository,
                                   @Lazy LearningService learningService,
                                   @Lazy LlmClient llmClient,
-                                  ObjectMapper objectMapper) {
+                                  ObjectMapper objectMapper,
+                                  @Lazy EmbeddingService embeddingService,
+                                  @Lazy VectorStore vectorStore) {
         this.incidentRepository = incidentRepository;
         this.learningService = learningService;
         this.llmClient = llmClient;
         this.objectMapper = objectMapper;
+        this.embeddingService = embeddingService;
+        this.vectorStore = vectorStore;
     }
 
     /**
-     * Search for similar past incidents based on keywords, enhanced with LLM
-     * query expansion and relevance ranking.
+     * Search for similar past incidents.  Uses embedding-based vector similarity
+     * when available (fast, single API call to embed the query), falling back to
+     * the legacy keyword + LLM expansion + LLM ranking pipeline when embeddings
+     * are disabled or return no results.
      */
     public List<Incident> searchSimilarIncidents(String query, String service) {
         List<Incident> allIncidents = service != null
@@ -63,6 +73,46 @@ public class IncidentKnowledgeBase {
                     .collect(Collectors.toList());
         }
 
+        // ── Fast path: embedding-based search ──
+        if (embeddingService.isEnabled()) {
+            try {
+                float[] queryVec = embeddingService.embed(query);
+                if (queryVec != null) {
+                    List<VectorStore.ScoredResult> results = vectorStore.findSimilar(queryVec, "incident", 10, 0.65);
+                    if (!results.isEmpty()) {
+                        // Resolve entity IDs to Incident objects, preserving similarity order
+                        Set<String> idSet = results.stream()
+                                .map(VectorStore.ScoredResult::entityId)
+                                .collect(Collectors.toCollection(LinkedHashSet::new));
+                        Map<String, Incident> incidentMap = allIncidents.stream()
+                                .filter(i -> idSet.contains(i.getId()))
+                                .collect(Collectors.toMap(Incident::getId, i -> i, (a, b) -> a));
+
+                        List<Incident> ranked = results.stream()
+                                .map(r -> incidentMap.get(r.entityId()))
+                                .filter(Objects::nonNull)
+                                .collect(Collectors.toList());
+
+                        if (!ranked.isEmpty()) {
+                            log.debug("Embedding search for '{}' returned {} results (skipped LLM expansion + ranking)",
+                                    query, ranked.size());
+                            return ranked;
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Embedding search failed for '{}', falling back to keyword search: {}", query, e.getMessage());
+            }
+        }
+
+        // ── Fallback: keyword + LLM pipeline ──
+        return searchSimilarIncidentsKeyword(query, allIncidents);
+    }
+
+    /**
+     * Legacy keyword-based search with LLM query expansion and ranking.
+     */
+    private List<Incident> searchSimilarIncidentsKeyword(String query, List<Incident> allIncidents) {
         // Step 1: Expand query with LLM for better recall
         List<String> expandedTerms = expandSearchQuery(query);
 
@@ -79,7 +129,7 @@ public class IncidentKnowledgeBase {
                     return expandedTerms.stream().anyMatch(searchText::contains);
                 })
                 .sorted(Comparator.comparing(Incident::getCreatedAt).reversed())
-                .limit(20) // broader initial set for ranking
+                .limit(20)
                 .collect(Collectors.toList());
 
         // Step 3: Rank by relevance using LLM (better precision)

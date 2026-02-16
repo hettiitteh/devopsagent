@@ -5,6 +5,7 @@ import com.example.devopsagent.agent.LlmClient;
 import com.example.devopsagent.config.AgentProperties;
 import com.example.devopsagent.domain.Incident;
 import com.example.devopsagent.domain.MonitoredService;
+import com.example.devopsagent.embedding.EmbeddingService;
 import com.example.devopsagent.gateway.GatewayWebSocketHandler;
 import com.example.devopsagent.playbook.PlaybookEngine;
 import com.example.devopsagent.repository.IncidentRepository;
@@ -61,6 +62,7 @@ public class MonitoringService {
     private final RcaService rcaService;
     private final LlmClient llmClient;
     private final ObjectMapper objectMapper;
+    private final EmbeddingService embeddingService;
 
     public MonitoringService(MonitoredServiceRepository serviceRepository,
                              IncidentRepository incidentRepository,
@@ -73,7 +75,8 @@ public class MonitoringService {
                              LearningService learningService,
                              @Lazy RcaService rcaService,
                              @Lazy LlmClient llmClient,
-                             ObjectMapper objectMapper) {
+                             ObjectMapper objectMapper,
+                             @Lazy EmbeddingService embeddingService) {
         this.serviceRepository = serviceRepository;
         this.incidentRepository = incidentRepository;
         this.properties = properties;
@@ -86,6 +89,7 @@ public class MonitoringService {
         this.rcaService = rcaService;
         this.llmClient = llmClient;
         this.objectMapper = objectMapper;
+        this.embeddingService = embeddingService;
     }
 
     // Health check history for anomaly detection
@@ -329,6 +333,9 @@ public class MonitoringService {
                     "severity", incident.getSeverity().name(),
                     "service", service.getName()
             ));
+
+            // Embed the new incident for vector similarity search
+            embeddingService.embedIncidentAsync(incident);
         }
 
         // Auto-trigger matching playbooks with the classified severity
@@ -450,6 +457,9 @@ public class MonitoringService {
                 } catch (Exception e) {
                     log.warn("Failed to record auto-recovery for learning: {}", e.getMessage());
                 }
+
+                // Re-embed the incident now that it has resolution data
+                embeddingService.embedIncidentAsync(incident);
 
                 // Generate RCA asynchronously for the resolved incident
                 try {

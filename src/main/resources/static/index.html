@@ -320,6 +320,20 @@
                     </div>
                 </div>
             </div>
+            <div style="margin-top:16px;">
+                <div class="card">
+                    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+                        <span>Vector Embeddings</span>
+                        <div style="display:flex;gap:8px;">
+                            <button class="btn btn-small" onclick="migrateEmbeddings()" title="Embed records that are missing embeddings">Migrate</button>
+                            <button class="btn btn-small btn-danger" onclick="reindexEmbeddings()" title="Re-embed ALL records (force refresh)">Re-index All</button>
+                        </div>
+                    </div>
+                    <div id="embedding-status-container" style="font-size:13px;color:var(--text-dim);">
+                        <div class="empty-state">Loading embedding status...</div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Architecture / How It Works -->
@@ -2485,6 +2499,82 @@ async function triggerRiskAnalysis() {
     }
 }
 
+// ─── Embedding Status ───
+async function loadEmbeddingStatus() {
+    const container = document.getElementById('embedding-status-container');
+    if (!container) return;
+    try {
+        const data = await api('/api/embeddings/status');
+        if (!data) {
+            container.innerHTML = '<div class="empty-state">Failed to load embedding status</div>';
+            return;
+        }
+        const enabled = data.enabled;
+        const total = data.totalEmbeddings || 0;
+        const incidents = data.incidentEmbeddings || 0;
+        const resolutions = data.resolutionEmbeddings || 0;
+        const rcas = data.rcaEmbeddings || 0;
+        const inMemory = data.inMemoryCount || 0;
+        const model = data.model || 'unknown';
+        const dims = data.dimensions || 0;
+        const running = data.migrationRunning;
+        const lastAt = data.lastMigrationAt !== 'never' ? new Date(data.lastMigrationAt).toLocaleString() : 'Never';
+
+        container.innerHTML = `
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:12px;">
+                <div style="text-align:center;padding:8px;background:var(--bg-input);border-radius:var(--radius-sm);">
+                    <div style="font-size:20px;font-weight:700;color:var(--accent);">${total}</div>
+                    <div style="font-size:11px;color:var(--text-dim);">Total Embeddings</div>
+                </div>
+                <div style="text-align:center;padding:8px;background:var(--bg-input);border-radius:var(--radius-sm);">
+                    <div style="font-size:20px;font-weight:700;color:var(--yellow);">${incidents}</div>
+                    <div style="font-size:11px;color:var(--text-dim);">Incidents</div>
+                </div>
+                <div style="text-align:center;padding:8px;background:var(--bg-input);border-radius:var(--radius-sm);">
+                    <div style="font-size:20px;font-weight:700;color:var(--green);">${resolutions}</div>
+                    <div style="font-size:11px;color:var(--text-dim);">Resolutions</div>
+                </div>
+                <div style="text-align:center;padding:8px;background:var(--bg-input);border-radius:var(--radius-sm);">
+                    <div style="font-size:20px;font-weight:700;color:var(--blue);">${rcas}</div>
+                    <div style="font-size:11px;color:var(--text-dim);">RCA Reports</div>
+                </div>
+            </div>
+            <div style="display:flex;gap:16px;font-size:12px;color:var(--text-dim);">
+                <span>Status: ${enabled ? '<span style="color:var(--green);">Enabled</span>' : '<span style="color:var(--red);">Disabled</span>'}</span>
+                <span>Model: <span style="color:var(--text);">${model}</span></span>
+                <span>Dimensions: <span style="color:var(--text);">${dims}</span></span>
+                <span>In Memory: <span style="color:var(--text);">${inMemory}</span></span>
+                ${running ? '<span style="color:var(--yellow);">Migration running...</span>' : ''}
+                <span>Last migration: ${lastAt}</span>
+            </div>
+        `;
+    } catch (e) {
+        container.innerHTML = '<div class="empty-state">Failed to load embedding status</div>';
+    }
+}
+
+async function migrateEmbeddings() {
+    if (!confirm('Embed all records that are currently missing embeddings?')) return;
+    try {
+        const result = await fetch('/api/embeddings/migrate', { method: 'POST' }).then(r => r.json());
+        alert('Migration complete: ' + (result.newEmbeddings || 0) + ' new embeddings generated.');
+        loadEmbeddingStatus();
+    } catch (e) {
+        alert('Migration failed: ' + e.message);
+    }
+}
+
+async function reindexEmbeddings() {
+    if (!confirm('Re-embed ALL records? This may take a while and will make API calls for every record.')) return;
+    try {
+        const result = await fetch('/api/embeddings/reindex', { method: 'POST' }).then(r => r.json());
+        alert('Re-index complete: ' + (result.embeddingsGenerated || 0) + ' embeddings generated.');
+        loadEmbeddingStatus();
+    } catch (e) {
+        alert('Re-index failed: ' + e.message);
+    }
+}
+
 async function loadDashboardRisks() {
     const container = document.getElementById('dashboard-risks-container');
     if (!container) return;
@@ -2520,6 +2610,7 @@ setTimeout(() => {
     loadPlaybooks(); refreshApprovals(); refreshAuditLog(); refreshInsights(); loadLearnings();
     loadRcaReports(); refreshRcaBadge();
     loadRisks(); refreshRiskBadge(); loadDashboardRisks();
+    loadEmbeddingStatus();
 }, 500);
 setInterval(refreshDashboard, 15000);
 setInterval(refreshApprovals, 30000);
@@ -2527,6 +2618,7 @@ setInterval(refreshInsights, 60000);
 setInterval(loadSuggestions, 120000);
 setInterval(refreshRcaBadge, 30000);
 setInterval(() => { refreshRiskBadge(); loadDashboardRisks(); }, 60000);
+setInterval(loadEmbeddingStatus, 60000);
 </script>
 </body>
 </html>
