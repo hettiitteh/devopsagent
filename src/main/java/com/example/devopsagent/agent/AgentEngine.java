@@ -5,6 +5,7 @@ import com.example.devopsagent.gateway.GatewayWebSocketHandler;
 import com.example.devopsagent.service.AuditService;
 import com.example.devopsagent.service.ApprovalService;
 import com.example.devopsagent.service.LearningService;
+import com.example.devopsagent.service.ToolConfigService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -46,6 +47,7 @@ public class AgentEngine {
     private final ApprovalService approvalService;
     private final LearningService learningService;
     private final GatewayWebSocketHandler gatewayHandler;
+    private final ToolConfigService toolConfigService;
 
     private static final int MAX_ITERATIONS = 25;
     private static final int MAX_CONVERSATION_TOKENS = 128000;
@@ -229,9 +231,9 @@ public class AgentEngine {
                         continue;
                     }
 
-                    // Check approval: config-driven list OR tool's own flag
-                    boolean toolNeedsApproval = properties.getToolPolicy().getApprovalRequired()
-                            .contains(toolCall.getName()) || tool.get().requiresApproval();
+                    // Check approval: DB-driven config OR tool's own flag
+                    boolean toolNeedsApproval = toolConfigService.isApprovalRequired(toolCall.getName())
+                            || tool.get().requiresApproval();
                     if (toolNeedsApproval && !toolContext.isToolApproved(toolCall.getName())) {
                         try {
                             approvalService.requestApproval(

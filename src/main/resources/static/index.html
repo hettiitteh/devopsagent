@@ -247,11 +247,35 @@
         .empty-state { text-align: center; padding: 40px 20px; color: var(--text-dim); }
         .empty-state .icon { font-size: 36px; margin-bottom: 10px; }
         .tag { display: inline-block; padding: 2px 8px; background: var(--bg-input); border-radius: 4px; font-size: 11px; margin-right: 4px; }
-        .tool-card { padding: 14px; background: var(--bg-input); border-radius: var(--radius-sm); border: 1px solid var(--border); }
-        .tool-card h4 { font-size: 13px; font-weight: 600; color: var(--accent); margin-bottom: 4px; }
-        .tool-card p { font-size: 12px; color: var(--text-dim); line-height: 1.5; }
-        .tool-card .tag { margin-top: 6px; }
-        .tools-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+        /* ─── Tools Table ─── */
+        .tools-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+        .tools-toolbar .form-input { max-width: 260px; }
+        .tools-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .tools-table th, .tools-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+        .tools-table th { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-dim); font-weight: 600; }
+        .tools-table tr { cursor: pointer; transition: background .15s; }
+        .tools-table tbody tr:hover { background: rgba(108,114,255,.06); }
+        .tools-table .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+        .tools-table .status-dot.on { background: var(--green); }
+        .tools-table .status-dot.off { background: var(--text-dim); opacity: .4; }
+        .tools-table .badge-approval { background: var(--yellow-bg); color: var(--yellow); padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 600; }
+        .tools-table .badge-mutating { background: rgba(255,100,100,.15); color: #f66; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 600; }
+        .bulk-bar { display: none; gap: 8px; align-items: center; padding: 8px 12px; background: var(--bg-input); border-radius: var(--radius-sm); margin-bottom: 8px; font-size: 12px; }
+        .bulk-bar.visible { display: flex; }
+        /* ─── Tool Detail Modal ─── */
+        .tool-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 200; justify-content: center; align-items: flex-start; padding-top: 60px; }
+        .tool-modal-overlay.open { display: flex; }
+        .tool-modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); width: 640px; max-height: 80vh; overflow-y: auto; padding: 24px; }
+        .tool-modal h3 { margin-bottom: 16px; font-size: 16px; }
+        .tool-modal .field { margin-bottom: 14px; }
+        .tool-modal .field label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-dim); margin-bottom: 4px; font-weight: 600; }
+        .tool-modal .field textarea { width: 100%; min-height: 80px; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px; color: var(--text); font-family: var(--mono); font-size: 12px; resize: vertical; }
+        .tool-modal .toggle-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+        .tool-modal .toggle-row label { font-size: 13px; color: var(--text); cursor: pointer; }
+        .tool-modal .exec-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+        .tool-modal .exec-table th, .tool-modal .exec-table td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--border); }
+        .tool-modal .exec-table th { font-size: 10px; text-transform: uppercase; color: var(--text-dim); }
+        .tool-modal .btn-row { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
     </style>
 </head>
 <body>
@@ -496,10 +520,83 @@
         <div class="page" id="page-tools">
             <div class="page-header">
                 <h2>Agent Tools</h2>
-                <p>All SRE tools available to the agent, filtered by the 9-layer policy engine</p>
+                <p>Manage all SRE tools — enable/disable, configure approval, set profile access, and view execution history</p>
             </div>
-            <div class="tools-grid" id="tools-grid">
-                <div class="empty-state"><div class="loading"></div><br>Loading tools...</div>
+            <div class="tools-toolbar">
+                <input class="form-input" id="tools-search" placeholder="Search tools..." oninput="filterTools()">
+                <select class="form-input" id="tools-cat-filter" onchange="filterTools()" style="max-width:160px;">
+                    <option value="">All categories</option>
+                </select>
+                <span style="flex:1;"></span>
+                <span id="tools-count" style="font-size:12px;color:var(--text-dim);"></span>
+            </div>
+            <div class="bulk-bar" id="tools-bulk-bar">
+                <span id="bulk-count">0 selected</span>
+                <button class="btn btn-secondary" onclick="bulkToolAction('enable')">Enable</button>
+                <button class="btn btn-secondary" onclick="bulkToolAction('disable')">Disable</button>
+                <button class="btn btn-secondary" onclick="bulkToolAction('approval_on')">Require Approval</button>
+                <button class="btn btn-secondary" onclick="bulkToolAction('approval_off')">Remove Approval</button>
+                <span style="flex:1;"></span>
+                <button class="btn btn-secondary" onclick="clearToolSelection()">Clear</button>
+            </div>
+            <table class="tools-table" id="tools-table">
+                <thead>
+                    <tr>
+                        <th style="width:30px;"><input type="checkbox" id="tools-select-all" onchange="toggleAllTools(this.checked)"></th>
+                        <th style="width:40px;">Status</th>
+                        <th>Name</th>
+                        <th>Category</th>
+                        <th>Approval</th>
+                        <th>Profiles</th>
+                        <th style="text-align:right;">Executions</th>
+                        <th>Last Used</th>
+                    </tr>
+                </thead>
+                <tbody id="tools-tbody">
+                    <tr><td colspan="8" class="empty-state"><div class="loading"></div><br>Loading tools...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Tool Detail Modal -->
+        <div class="tool-modal-overlay" id="tool-modal-overlay" onclick="if(event.target===this)closeToolModal()">
+            <div class="tool-modal">
+                <h3 id="tool-modal-title">Tool Configuration</h3>
+                <div class="field">
+                    <label>Description</label>
+                    <textarea id="tool-modal-desc"></textarea>
+                    <div style="font-size:11px;color:var(--text-dim);margin-top:2px;" id="tool-modal-default-desc"></div>
+                </div>
+                <div class="field">
+                    <label>Category</label>
+                    <div id="tool-modal-category" style="font-size:13px;"></div>
+                </div>
+                <div class="toggle-row">
+                    <input type="checkbox" id="tool-modal-enabled" style="width:16px;height:16px;accent-color:var(--green);cursor:pointer;">
+                    <label for="tool-modal-enabled">Enabled</label>
+                </div>
+                <div class="toggle-row">
+                    <input type="checkbox" id="tool-modal-approval" style="width:16px;height:16px;accent-color:var(--yellow);cursor:pointer;">
+                    <label for="tool-modal-approval">Requires Human Approval</label>
+                </div>
+                <div class="field">
+                    <label>Allowed Profiles (comma-separated, blank = all)</label>
+                    <input class="form-input" id="tool-modal-profiles" placeholder="e.g. sre,full">
+                </div>
+                <div class="field">
+                    <label>Constraints (JSON)</label>
+                    <textarea id="tool-modal-constraints" placeholder='{"maxExecutionsPerHour": 100}'></textarea>
+                </div>
+                <div class="field">
+                    <label>Execution History (last 50)</label>
+                    <div id="tool-modal-exec-history" style="max-height:200px;overflow-y:auto;">
+                        <div class="empty-state" style="padding:10px;">No executions yet</div>
+                    </div>
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-secondary" onclick="closeToolModal()">Cancel</button>
+                    <button class="btn btn-primary" onclick="saveToolConfig()">Save</button>
+                </div>
             </div>
         </div>
 
@@ -1507,41 +1604,168 @@ async function deleteAlert(id) {
 }
 
 // ─── Tools ───
+let allToolsData = [];
+let selectedTools = new Set();
+let currentToolName = null;
+
 async function loadTools() {
-    const tools = await api('/api/agent/tools/detailed');
-    const grid = document.getElementById('tools-grid');
-    if (!tools || tools.length === 0) { grid.innerHTML = '<div class="empty-state">No tools available</div>'; return; }
-    const catIcon = { monitoring: '📡', infrastructure: '🏗️', remediation: '🔧', diagnostics: '🔍', incident: '🚨', alerting: '🔔' };
-    grid.innerHTML = tools.map(t => {
+    const tools = await api('/api/tools');
+    if (!tools) return;
+    allToolsData = tools;
+
+    // Populate category filter
+    const cats = [...new Set(tools.map(t => t.category))].sort();
+    const catSelect = document.getElementById('tools-cat-filter');
+    catSelect.innerHTML = '<option value="">All categories</option>' +
+        cats.map(c => `<option value="${c}">${c}</option>`).join('');
+
+    renderToolsTable(tools);
+}
+
+function filterTools() {
+    const search = (document.getElementById('tools-search').value || '').toLowerCase();
+    const cat = document.getElementById('tools-cat-filter').value;
+    const filtered = allToolsData.filter(t => {
+        if (cat && t.category !== cat) return false;
+        if (search && !t.name.toLowerCase().includes(search) && !(t.description || '').toLowerCase().includes(search)) return false;
+        return true;
+    });
+    renderToolsTable(filtered);
+}
+
+function renderToolsTable(tools) {
+    const tbody = document.getElementById('tools-tbody');
+    document.getElementById('tools-count').textContent = `${tools.length} tool${tools.length !== 1 ? 's' : ''}`;
+    if (!tools.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No tools match your filter</td></tr>'; return; }
+    const catIcon = { monitoring: '📡', infrastructure: '🏗️', remediation: '🔧', diagnostics: '🔍', incident: '🚨', alerting: '🔔', knowledge: '📚' };
+    tbody.innerHTML = tools.map(t => {
         const icon = catIcon[t.category] || '⚙️';
-        const approvalBadge = t.requiresApproval
-            ? '<span style="background:var(--yellow-bg);color:var(--yellow);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;margin-left:6px;">APPROVAL</span>'
-            : '';
-        const toggleChecked = t.requiresApproval ? 'checked' : '';
-        return `<div class="tool-card">
-            <div style="display:flex;align-items:center;justify-content:space-between;">
-                <h4>${icon} ${t.name}${approvalBadge}</h4>
-            </div>
-            <p>${t.description}</p>
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;">
-                <span class="tag">${t.category}</span>
-                <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-dim);cursor:pointer;" title="Toggle whether this tool requires human approval">
-                    <span>Approval required</span>
-                    <input type="checkbox" ${toggleChecked} onchange="toggleToolApproval('${t.name}', this.checked)"
-                        style="width:16px;height:16px;accent-color:var(--yellow);cursor:pointer;">
-                </label>
-            </div>
-        </div>`;
+        const checked = selectedTools.has(t.name) ? 'checked' : '';
+        const dotClass = t.enabled ? 'on' : 'off';
+        const approvalBadge = t.approvalRequired ? '<span class="badge-approval">APPROVAL</span>' : '';
+        const mutatingBadge = t.mutating ? '<span class="badge-mutating">MUTATING</span>' : '';
+        const profiles = t.allowedProfiles || 'all';
+        const lastUsed = t.lastUsed ? new Date(t.lastUsed).toLocaleString() : '—';
+        return `<tr>
+            <td onclick="event.stopPropagation()"><input type="checkbox" ${checked} onchange="toggleToolSelect('${t.name}', this.checked)" style="cursor:pointer;"></td>
+            <td><span class="status-dot ${dotClass}"></span>${t.enabled ? 'On' : 'Off'}</td>
+            <td style="font-weight:600;color:var(--accent);cursor:pointer;" onclick="openToolModal('${t.name}')">${icon} ${t.name}</td>
+            <td><span class="tag">${t.category}</span></td>
+            <td>${approvalBadge} ${mutatingBadge}</td>
+            <td style="font-size:12px;color:var(--text-dim);">${profiles}</td>
+            <td style="text-align:right;">${t.executionCount || 0}</td>
+            <td style="font-size:12px;color:var(--text-dim);">${lastUsed}</td>
+        </tr>`;
     }).join('');
 }
-async function toggleToolApproval(toolName, requiresApproval) {
-    const res = await api(`/api/agent/tools/${toolName}/approval`, {
-        method: 'PATCH',
-        body: JSON.stringify({ requiresApproval })
+
+function toggleToolSelect(name, checked) {
+    if (checked) selectedTools.add(name); else selectedTools.delete(name);
+    updateBulkBar();
+}
+
+function toggleAllTools(checked) {
+    const search = (document.getElementById('tools-search').value || '').toLowerCase();
+    const cat = document.getElementById('tools-cat-filter').value;
+    const visible = allToolsData.filter(t => {
+        if (cat && t.category !== cat) return false;
+        if (search && !t.name.toLowerCase().includes(search) && !(t.description || '').toLowerCase().includes(search)) return false;
+        return true;
     });
+    selectedTools.clear();
+    if (checked) visible.forEach(t => selectedTools.add(t.name));
+    filterTools();
+    updateBulkBar();
+}
+
+function clearToolSelection() {
+    selectedTools.clear();
+    document.getElementById('tools-select-all').checked = false;
+    filterTools();
+    updateBulkBar();
+}
+
+function updateBulkBar() {
+    const bar = document.getElementById('tools-bulk-bar');
+    const count = selectedTools.size;
+    if (count > 0) {
+        bar.classList.add('visible');
+        document.getElementById('bulk-count').textContent = `${count} selected`;
+    } else {
+        bar.classList.remove('visible');
+    }
+}
+
+async function bulkToolAction(action) {
+    if (selectedTools.size === 0) return;
+    const requests = [...selectedTools].map(name => {
+        const req = { name };
+        if (action === 'enable') req.enabled = true;
+        if (action === 'disable') req.enabled = false;
+        if (action === 'approval_on') req.approvalRequired = true;
+        if (action === 'approval_off') req.approvalRequired = false;
+        return req;
+    });
+    await api('/api/tools/bulk', { method: 'POST', body: JSON.stringify(requests) });
+    clearToolSelection();
+    await loadTools();
+    addEvent('tool.bulk_update', `Bulk ${action} on ${requests.length} tools`);
+}
+
+async function openToolModal(name) {
+    currentToolName = name;
+    const tool = await api(`/api/tools/${name}`);
+    if (!tool) return;
+
+    document.getElementById('tool-modal-title').textContent = `${tool.name} — ${tool.category}`;
+    document.getElementById('tool-modal-desc').value = tool.customDescription || '';
+    document.getElementById('tool-modal-default-desc').textContent = `Default: ${tool.defaultDescription || ''}`;
+    document.getElementById('tool-modal-category').textContent = tool.category;
+    document.getElementById('tool-modal-enabled').checked = tool.enabled;
+    document.getElementById('tool-modal-approval').checked = tool.approvalRequired;
+    document.getElementById('tool-modal-profiles').value = tool.allowedProfiles || '';
+    document.getElementById('tool-modal-constraints').value = tool.constraints || '';
+
+    // Load execution history
+    const execData = await api(`/api/tools/${name}/executions?limit=50`);
+    const historyDiv = document.getElementById('tool-modal-exec-history');
+    if (execData && execData.executions && execData.executions.length > 0) {
+        historyDiv.innerHTML = `<table class="exec-table">
+            <thead><tr><th>Timestamp</th><th>Session</th><th>Result</th></tr></thead>
+            <tbody>${execData.executions.map(e => {
+                const ts = new Date(e.timestamp).toLocaleString();
+                const sess = e.sessionId ? e.sessionId.substring(0, 8) + '...' : '—';
+                const result = e.success ? '<span style="color:var(--green);">Success</span>' : '<span style="color:#f66;">Failed</span>';
+                return `<tr><td style="font-size:11px;">${ts}</td><td style="font-size:11px;">${sess}</td><td>${result}</td></tr>`;
+            }).join('')}</tbody>
+        </table>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:6px;">Total executions: ${execData.totalExecutions}</div>`;
+    } else {
+        historyDiv.innerHTML = '<div class="empty-state" style="padding:10px;">No executions yet</div>';
+    }
+
+    document.getElementById('tool-modal-overlay').classList.add('open');
+}
+
+function closeToolModal() {
+    document.getElementById('tool-modal-overlay').classList.remove('open');
+    currentToolName = null;
+}
+
+async function saveToolConfig() {
+    if (!currentToolName) return;
+    const body = {
+        enabled: document.getElementById('tool-modal-enabled').checked,
+        approvalRequired: document.getElementById('tool-modal-approval').checked,
+        description: document.getElementById('tool-modal-desc').value,
+        allowedProfiles: document.getElementById('tool-modal-profiles').value,
+        constraints: document.getElementById('tool-modal-constraints').value
+    };
+    const res = await api(`/api/tools/${currentToolName}`, { method: 'PUT', body: JSON.stringify(body) });
     if (res) {
-        const status = requiresApproval ? 'now requires' : 'no longer requires';
-        addEvent('tool.approval_changed', `${toolName} ${status} approval`);
+        addEvent('tool.config_changed', `Updated config for ${currentToolName}`);
+        closeToolModal();
+        await loadTools();
     }
 }
 

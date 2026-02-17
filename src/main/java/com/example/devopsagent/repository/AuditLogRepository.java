@@ -34,4 +34,9 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, String> {
     List<AuditLog> findFiltered(String actor, String action, String target);
 
     long countByAction(String action);
+
+    @Query("SELECT a FROM AuditLog a WHERE a.action = :action AND a.target = :target ORDER BY a.timestamp DESC")
+    List<AuditLog> findByActionAndTargetOrderByTimestampDesc(String action, String target, Pageable pageable);
+
+    long countByActionAndTarget(String action, String target);
 }

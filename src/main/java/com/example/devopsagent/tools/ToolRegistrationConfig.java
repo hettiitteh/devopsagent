@@ -2,6 +2,7 @@ package com.example.devopsagent.tools;
 
 import com.example.devopsagent.agent.AgentTool;
 import com.example.devopsagent.agent.ToolRegistry;
+import com.example.devopsagent.service.ToolConfigService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -11,8 +12,8 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 /**
- * Registers all built-in tools at application startup.
- * All tools are discovered and registered automatically at startup.
+ * Registers all built-in tools at application startup and syncs
+ * their configuration to the database via ToolConfigService.
  */
 @Slf4j
 @Component
@@ -21,6 +22,7 @@ public class ToolRegistrationConfig {
 
     private final ToolRegistry toolRegistry;
     private final List<AgentTool> allTools;
+    private final ToolConfigService toolConfigService;
 
     @EventListener(ApplicationReadyEvent.class)
     public void registerTools() {
@@ -29,6 +31,9 @@ public class ToolRegistrationConfig {
         for (AgentTool tool : allTools) {
             toolRegistry.register(tool);
         }
+
+        // Sync tool configs to the database (creates rows for new tools, preserves user edits)
+        toolConfigService.syncTools(allTools);
 
         log.info("Tool registration complete. {} tools available:", toolRegistry.getToolCount());
         toolRegistry.listTools().forEach((name, desc) ->

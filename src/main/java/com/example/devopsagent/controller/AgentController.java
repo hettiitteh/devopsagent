@@ -3,8 +3,6 @@ package com.example.devopsagent.controller;
 import com.example.devopsagent.agent.AgentEngine;
 import com.example.devopsagent.agent.SystemPromptBuilder;
 import com.example.devopsagent.agent.ToolRegistry;
-import com.example.devopsagent.config.AgentProperties;
-import com.example.devopsagent.domain.Incident;
 import com.example.devopsagent.domain.MonitoredService;
 import com.example.devopsagent.repository.IncidentRepository;
 import com.example.devopsagent.repository.MonitoredServiceRepository;
@@ -26,7 +24,6 @@ public class AgentController {
 
     private final AgentEngine agentEngine;
     private final ToolRegistry toolRegistry;
-    private final AgentProperties properties;
     private final IncidentRepository incidentRepository;
     private final MonitoredServiceRepository serviceRepository;
 
@@ -57,43 +54,11 @@ public class AgentController {
     }
 
     /**
-     * List all available tools (simple name → description map, kept for backward compat).
+     * List all available tools (simple name -> description map, kept for backward compat).
      */
     @GetMapping("/tools")
     public ResponseEntity<Map<String, String>> listTools() {
         return ResponseEntity.ok(toolRegistry.listTools());
-    }
-
-    /**
-     * List all tools with detailed info including approval status.
-     */
-    @GetMapping("/tools/detailed")
-    public ResponseEntity<List<Map<String, Object>>> listToolsDetailed() {
-        Set<String> approvalSet = new HashSet<>(properties.getToolPolicy().getApprovalRequired());
-        return ResponseEntity.ok(toolRegistry.listToolsDetailed(approvalSet));
-    }
-
-    /**
-     * Toggle approval requirement for a tool at runtime.
-     */
-    @PatchMapping("/tools/{toolName}/approval")
-    public ResponseEntity<Map<String, Object>> toggleToolApproval(
-            @PathVariable String toolName,
-            @RequestBody Map<String, Object> body) {
-        boolean requireApproval = Boolean.TRUE.equals(body.get("requiresApproval"));
-        List<String> approvalList = properties.getToolPolicy().getApprovalRequired();
-
-        if (requireApproval && !approvalList.contains(toolName)) {
-            approvalList.add(toolName);
-        } else if (!requireApproval) {
-            approvalList.remove(toolName);
-        }
-
-        return ResponseEntity.ok(Map.of(
-                "tool", toolName,
-                "requiresApproval", approvalList.contains(toolName),
-                "approvalRequiredTools", approvalList
-        ));
     }
 
     /**

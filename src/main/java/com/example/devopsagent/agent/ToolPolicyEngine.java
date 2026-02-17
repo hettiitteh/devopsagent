@@ -1,20 +1,21 @@
 package com.example.devopsagent.agent;
 
 import com.example.devopsagent.config.AgentProperties;
-import lombok.RequiredArgsConstructor;
+import com.example.devopsagent.service.ToolConfigService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 /**
- * 9-Layer Tool Policy Engine.
+ * 10-Layer Tool Policy Engine.
  *
- * Tool access is controlled by nine cascading policy layers, evaluated in order:
- * 1. Profile policy — Base access level (minimal, sre, full)
+ * Tool access is controlled by ten cascading policy layers, evaluated in order:
+ * 0. DB config — Tool must be enabled in the database
+ * 1. Profile policy — Base access level (minimal, sre, full) + DB profile restrictions
  * 2. Provider-specific profile — Override by LLM provider
  * 3. Global policy — Project-wide tool rules
  * 4. Provider-specific global — Provider overrides on global
@@ -28,10 +29,10 @@ import java.util.Set;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class ToolPolicyEngine {
 
     private final AgentProperties properties;
+    private final ToolConfigService toolConfigService;
 
     // Additional policy layers
     private final Map<String, Set<String>> providerPolicies = Map.of();
@@ -39,13 +40,30 @@ public class ToolPolicyEngine {
     private final Set<String> globalDenyList = Set.of();
     private final Set<String> sandboxRestrictions = Set.of();
 
+    public ToolPolicyEngine(AgentProperties properties, @Lazy ToolConfigService toolConfigService) {
+        this.properties = properties;
+        this.toolConfigService = toolConfigService;
+    }
+
     /**
-     * Check if a tool is allowed under all 9 policy layers.
+     * Check if a tool is allowed under all 10 policy layers.
      */
     public boolean isToolAllowed(String toolName, ToolContext context) {
-        // Layer 1: Profile policy
+        // Layer 0: DB config — tool must be enabled
+        if (!toolConfigService.isToolEnabled(toolName)) {
+            log.debug("Tool {} denied by DB config (disabled)", toolName);
+            return false;
+        }
+
+        // Layer 1: Profile policy (YAML + DB profile restrictions)
         if (!checkProfilePolicy(toolName, context.getToolProfile())) {
             log.debug("Tool {} denied by profile policy (profile={})", toolName, context.getToolProfile());
+            return false;
+        }
+
+        // Layer 1b: DB profile restriction
+        if (!toolConfigService.isToolAllowedForProfile(toolName, context.getToolProfile())) {
+            log.debug("Tool {} denied by DB profile restriction (profile={})", toolName, context.getToolProfile());
             return false;
         }
 
@@ -75,7 +93,6 @@ public class ToolPolicyEngine {
         }
 
         // Layer 9: Subagent policy (inherits parent restrictions)
-        // Context's allowed tools represent the intersection of all parent policies
         if (context.getAllowedTools() != null && !context.getAllowedTools().isEmpty()) {
             if (!context.getAllowedTools().contains("*") && !context.getAllowedTools().contains(toolName)) {
                 log.debug("Tool {} denied by context policy", toolName);
@@ -94,7 +111,6 @@ public class ToolPolicyEngine {
         if (profiles.containsKey(profileName)) {
             return new HashSet<>(profiles.get(profileName).getAllowedTools());
         }
-        // Default to minimal if profile not found
         if (profiles.containsKey("minimal")) {
             return new HashSet<>(profiles.get("minimal").getAllowedTools());
         }
@@ -105,7 +121,6 @@ public class ToolPolicyEngine {
         if (profileName == null) {
             profileName = properties.getToolPolicy().getDefaultProfile();
         }
-
         Set<String> allowed = getAllowedToolsForProfile(profileName);
         return allowed.contains("*") || allowed.contains(toolName);
     }
@@ -115,7 +130,10 @@ public class ToolPolicyEngine {
      */
     public Map<String, Boolean> auditToolAccess(String toolName, ToolContext context) {
         return Map.of(
+                "layer0_db_enabled", toolConfigService.isToolEnabled(toolName),
                 "layer1_profile", checkProfilePolicy(toolName, context.getToolProfile()),
+                "layer1b_db_profile", toolConfigService.isToolAllowedForProfile(toolName,
+                        context.getToolProfile() != null ? context.getToolProfile() : properties.getToolPolicy().getDefaultProfile()),
                 "layer3_global", !globalDenyList.contains(toolName),
                 "layer8_sandbox", !sandboxRestrictions.contains(toolName),
                 "layer9_context", context.getAllowedTools() == null ||
