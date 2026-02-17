@@ -25,7 +25,7 @@ import java.util.UUID;
 /**
  * Registers all Gateway RPC methods at application startup.
  *
- * Like OpenClaw's 70+ RPC methods, organized by domain:
+ * RPC methods organized by domain:
  * - gateway.* → Gateway status/control
  * - agent.* → Agent execution
  * - monitor.* → Monitoring operations

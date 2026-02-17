@@ -14,7 +14,7 @@ import java.util.Map;
 
 /**
  * Notification Service - Send alerts via Slack, PagerDuty, email, etc.
- * Like OpenClaw's multi-channel messaging, supports multiple notification backends.
+ * Supports multiple notification backends.
  */
 @Slf4j
 @Service
@@ -76,7 +76,7 @@ public class NotificationService {
                     "text", String.format("%s *[%s] Incident: %s*\nService: %s\nDescription: %s\nID: %s",
                             emoji, incident.getSeverity(), incident.getTitle(),
                             incident.getService(), incident.getDescription(), incident.getId()),
-                    "username", "DevOps SRE Agent",
+                    "username", "Jarvis SRE",
                     "icon_emoji", ":robot_face:"
             );
 

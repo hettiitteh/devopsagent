@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Central configuration for the DevOps Agent.
+ * Central configuration for Jarvis The SRE Engineer.
  * Maps to the 'devops-agent' prefix in application.yml.
  * Supports hot-reload via Spring Cloud Config or @RefreshScope.
  */

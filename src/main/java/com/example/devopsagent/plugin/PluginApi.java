@@ -13,7 +13,7 @@ import java.util.function.BiFunction;
 /**
  * Plugin API - The stable surface area for plugins to interact with the agent system.
  *
- * Like OpenClaw's OpenClawPluginApi, this is the only API plugins should use.
+ * This is the only API plugins should use.
  * Internal types are not guaranteed stable.
  */
 @Slf4j

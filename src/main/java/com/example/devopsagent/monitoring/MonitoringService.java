@@ -39,7 +39,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * Core Monitoring Service - Continuously monitors registered services.
  *
- * Like OpenClaw's heartbeat monitoring system, this service:
+ * Core monitoring service that:
  * - Polls health endpoints at configured intervals
  * - Tracks service health history
  * - Detects anomalies and state transitions

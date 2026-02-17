@@ -9,7 +9,7 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 
 /**
  * WebSocket configuration for the Gateway Protocol.
- * Like OpenClaw, all clients connect through a single WebSocket endpoint.
+ * All clients connect through a single WebSocket endpoint.
  */
 @Configuration
 @EnableWebSocket

@@ -18,7 +18,7 @@ import java.util.Map;
 
 /**
  * Gateway Status and Dashboard Controller.
- * Like OpenClaw's gateway.status RPC method — provides system-wide status.
+ * Provides system-wide status via the gateway.status RPC method.
  */
 @RestController
 @RequestMapping("/api/gateway")
@@ -40,7 +40,7 @@ public class GatewayController {
     public ResponseEntity<Map<String, Object>> getStatus() {
         return ResponseEntity.ok(Map.of(
                 "version", "0.1.0",
-                "architecture", "OpenClaw",
+                "architecture", "Jarvis SRE",
                 "uptime", getUptime(),
                 "gateway", Map.of(
                         "active_sessions", gatewayHandler.getActiveSessionCount(),

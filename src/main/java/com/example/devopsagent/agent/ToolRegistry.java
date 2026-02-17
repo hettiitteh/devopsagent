@@ -9,7 +9,7 @@ import java.util.stream.Collectors;
 
 /**
  * Registry for all available agent tools.
- * Like OpenClaw's 60+ built-in tools, tools are registered at startup
+ * Tools are registered at startup
  * and can be dynamically added via the plugin system.
  */
 @Slf4j

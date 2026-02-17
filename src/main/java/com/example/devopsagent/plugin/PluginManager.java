@@ -11,7 +11,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Plugin Manager - Discovers, loads, and manages plugins.
  *
- * Like OpenClaw's plugin loading flow:
+ * Plugin loading flow:
  * 1. Discover plugins from bundled + user extensions
  * 2. Validate configuration
  * 3. Call register() on each plugin

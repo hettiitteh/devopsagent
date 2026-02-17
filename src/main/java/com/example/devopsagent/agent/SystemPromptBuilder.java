@@ -12,10 +12,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Dynamic System Prompt Builder (OpenClaw Architecture).
+ * Dynamic System Prompt Builder.
  *
- * Like OpenClaw's 17+ section system prompt, this assembles the prompt
- * dynamically based on context, available tools, and configuration.
+ * Assembles the LLM system prompt dynamically based on context,
+ * available tools, and configuration.
  *
  * Sections:
  * 1. Identity — SRE Agent persona
@@ -84,7 +84,7 @@ public class SystemPromptBuilder {
     private String buildIdentitySection() {
         return """
                 # Identity
-                You are an SRE (Site Reliability Engineering) Agent running inside the DevOps Agent platform.
+                You are Jarvis, an SRE (Site Reliability Engineering) Engineer.
                 You are an autonomous agent that monitors production systems, detects issues early,
                 runs playbooks, and mitigates problems. You act as a tireless SRE team member
                 that is always watching, always ready to respond.

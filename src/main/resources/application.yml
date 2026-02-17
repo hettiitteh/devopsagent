@@ -42,7 +42,7 @@ management:
       prometheus:
         enabled: true
 
-# DevOps Agent Configuration
+# Jarvis SRE Configuration
 devops-agent:
   # Gateway settings
   gateway:
@@ -94,7 +94,7 @@ devops-agent:
       - channel: pagerduty
         label: "VP Engineering"
 
-  # Tool policy (9-layer cascade like OpenClaw)
+  # Tool policy (9-layer cascade)
   tool-policy:
     default-profile: sre
     # Tools requiring human approval before execution (toggleable at runtime via UI)

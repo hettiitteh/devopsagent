@@ -10,9 +10,9 @@ import java.time.Instant;
 import java.util.*;
 
 /**
- * Security Audit Service (OpenClaw Architecture).
+ * Security Audit Service.
  *
- * Like OpenClaw's 30+ automated security checks, this service:
+ * Automated security checks service that:
  * - Validates command allowlists/denylists
  * - Checks tool policy configurations
  * - Detects potential command injection in parameters

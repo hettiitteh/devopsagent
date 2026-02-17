@@ -21,7 +21,7 @@ import java.util.stream.Collectors;
 /**
  * Incident Knowledge Base - Memory system for incident history.
  *
- * Like OpenClaw's hybrid BM25 + vector search memory, this provides
+ * Provides hybrid keyword + vector search memory. This offers
  * a searchable knowledge base of past incidents for faster resolution.
  *
  * Features:

@@ -8,7 +8,7 @@ import lombok.NoArgsConstructor;
 
 /**
  * JSON-RPC 2.0 message format for the Gateway Protocol.
- * Like OpenClaw, all communication uses JSON-RPC over WebSocket.
+ * All communication uses JSON-RPC over WebSocket.
  */
 @Data
 @Builder

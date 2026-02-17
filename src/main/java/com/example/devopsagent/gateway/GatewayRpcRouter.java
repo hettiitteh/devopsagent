@@ -10,7 +10,7 @@ import java.util.function.BiFunction;
 /**
  * Routes JSON-RPC method calls to their handlers.
  *
- * Like OpenClaw's 70+ RPC methods, this router maps method names
+ * This router maps method names
  * to handler functions. Organized by domain:
  * - agent.* → Agent execution
  * - monitor.* → Monitoring operations

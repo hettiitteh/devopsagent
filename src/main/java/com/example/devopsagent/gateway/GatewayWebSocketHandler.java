@@ -18,7 +18,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Core Gateway WebSocket Handler - The center of everything.
  *
- * Like OpenClaw's gateway, this is the single WebSocket endpoint through which
+ * This is the single WebSocket endpoint through which
  * all clients communicate. It manages sessions, routes JSON-RPC messages to
  * the appropriate handlers, and broadcasts events.
  */

@@ -6,9 +6,9 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Plugin Interface - Extensibility point for the DevOps Agent.
+ * Plugin Interface - Extensibility point for Jarvis.
  *
- * Like OpenClaw's plugin system, plugins can register:
+ * Plugins can register:
  * - Tools: New agent capabilities
  * - Hooks: Lifecycle event handlers
  * - Channels: New notification channels

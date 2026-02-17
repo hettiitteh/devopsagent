@@ -16,9 +16,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Core Agent Engine - The Agentic Loop (OpenClaw Architecture).
+ * Core Agent Engine - The Agentic Loop.
  *
- * Like OpenClaw's Pi Agent framework, this implements the fundamental agentic loop:
+ * Implements the fundamental agentic loop:
  * 1. Build system prompt (dynamic sections based on context)
  * 2. Create tool set (filtered by 9-layer policy)
  * 3. Send prompt + tool definitions to LLM
@@ -28,7 +28,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 7. Continue until task completion or max iterations
  *
  * There is no explicit task planner—the LLM itself drives the workflow
- * through reasoning, just like OpenClaw.
+ * through reasoning.
  */
 @Slf4j
 @Service

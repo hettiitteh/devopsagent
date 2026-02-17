@@ -4,7 +4,7 @@ import java.util.Map;
 
 /**
  * Interface for all agent tools.
- * Like OpenClaw's AgentTool interface, every tool follows the same contract:
+ * Every tool follows the same contract:
  * - name: Tool identifier
  * - description: LLM guidance for when/how to use the tool
  * - parameters: JSON schema for tool parameters

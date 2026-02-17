@@ -11,7 +11,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 9-Layer Tool Policy Engine (OpenClaw Architecture).
+ * 9-Layer Tool Policy Engine.
  *
  * Tool access is controlled by nine cascading policy layers, evaluated in order:
  * 1. Profile policy — Base access level (minimal, sre, full)

@@ -12,7 +12,7 @@ import java.util.List;
 
 /**
  * Registers all built-in tools at application startup.
- * Like OpenClaw's 60+ built-in tools, all tools are discovered and registered automatically.
+ * All tools are discovered and registered automatically at startup.
  */
 @Slf4j
 @Component

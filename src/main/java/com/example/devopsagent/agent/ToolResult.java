@@ -11,7 +11,7 @@ import java.util.Map;
 
 /**
  * Result from a tool execution.
- * Like OpenClaw's AgentToolResult, supports text and structured data.
+ * Supports text and structured data.
  */
 @Data
 @Builder
