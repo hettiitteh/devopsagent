@@ -1,9 +1,10 @@
 package com.example.devopsagent.gateway;
 
 import com.example.devopsagent.config.AgentProperties;
+import com.example.devopsagent.service.StatusBriefingService;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
@@ -24,14 +25,24 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class GatewayWebSocketHandler extends TextWebSocketHandler {
 
     private final ObjectMapper objectMapper;
     private final GatewayRpcRouter rpcRouter;
     private final AgentProperties properties;
+    private final StatusBriefingService statusBriefingService;
 
     private final Map<String, GatewaySession> sessions = new ConcurrentHashMap<>();
+
+    public GatewayWebSocketHandler(ObjectMapper objectMapper,
+                                   GatewayRpcRouter rpcRouter,
+                                   AgentProperties properties,
+                                   @Lazy StatusBriefingService statusBriefingService) {
+        this.objectMapper = objectMapper;
+        this.rpcRouter = rpcRouter;
+        this.properties = properties;
+        this.statusBriefingService = statusBriefingService;
+    }
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
@@ -56,6 +67,13 @@ public class GatewayWebSocketHandler extends TextWebSocketHandler {
                         "agent", true
                 )
         ));
+
+        // Send reconnection briefing so the user sees what happened recently
+        try {
+            statusBriefingService.sendBriefingToSession(session.getId());
+        } catch (Exception e) {
+            log.debug("Could not send reconnection briefing: {}", e.getMessage());
+        }
     }
 
     @Override

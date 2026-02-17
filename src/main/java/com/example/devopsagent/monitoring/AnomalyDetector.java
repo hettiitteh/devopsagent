@@ -6,6 +6,8 @@ import com.example.devopsagent.domain.Incident;
 import com.example.devopsagent.gateway.GatewayWebSocketHandler;
 import com.example.devopsagent.repository.AlertRuleRepository;
 import com.example.devopsagent.repository.IncidentRepository;
+import com.example.devopsagent.service.AutonomousInvestigationService;
+import com.example.devopsagent.service.NarrationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -29,6 +31,8 @@ public class AnomalyDetector {
     private final IncidentRepository incidentRepository;
     private final GatewayWebSocketHandler gatewayHandler;
     private final AgentProperties properties;
+    private final NarrationService narrationService;
+    private final AutonomousInvestigationService autonomousInvestigationService;
 
     // Current metric values (populated by MetricsCollector or external sources)
     private final Map<String, Double> currentMetrics = new ConcurrentHashMap<>();
@@ -135,6 +139,12 @@ public class AnomalyDetector {
                 "message", message,
                 "timestamp", Instant.now().toString()
         ));
+
+        // Narrate the alert via LLM
+        narrationService.narrateAlertTriggered(rule.getName(), rule.getMetric(), currentValue, rule.getThreshold(), message);
+
+        // Launch autonomous investigation for the alert
+        autonomousInvestigationService.investigateAlert(rule.getName(), rule.getMetric(), currentValue, message);
     }
 
     /**

@@ -173,6 +173,25 @@
         .chat-input-area { display: flex; gap: 8px; padding-top: 12px; border-top: 1px solid var(--border); }
         .chat-input-area .form-input { flex: 1; }
 
+        /* ─── Autonomous Investigation ─── */
+        .chat-msg.autonomous-msg {
+            border-left: 3px solid var(--accent);
+            background: rgba(108,114,255,.08);
+            padding: 14px 16px;
+        }
+        .autonomous-banner { font-weight: 600; margin-bottom: 6px; font-size: 13px; }
+        .autonomous-step { font-size: 12px; color: var(--text-dim); padding: 2px 0 2px 8px; }
+        .auto-tool-icon { margin-right: 4px; font-size: 11px; }
+        .autonomous-result { margin-top: 8px; }
+
+        /* ─── Briefing ─── */
+        .briefing-msg { opacity: 0.85; }
+        .briefing-label {
+            display: inline-block; background: var(--accent); color: #fff; font-size: 10px;
+            padding: 1px 7px; border-radius: 3px; margin-right: 6px; text-transform: uppercase;
+            font-weight: 600; letter-spacing: .5px; vertical-align: middle;
+        }
+
         /* ─── Event Log ─── */
         .event-log {
             max-height: 350px; overflow-y: auto; font-family: var(--mono); font-size: 12px;
@@ -463,7 +482,7 @@
             </div>
             <div class="chat-container">
                 <div class="chat-messages" id="chat-messages">
-                    <div class="chat-msg system">SRE Agent connected. Ask me to check health, investigate incidents, run playbooks, or diagnose issues.</div>
+                    <div class="chat-msg system">Jarvis online. I'm monitoring your services and will keep you posted.</div>
                 </div>
                 <div class="chat-input-area">
                     <input class="form-input" id="chat-input" placeholder="e.g. Check the health of all monitored services..." onkeydown="if(event.key==='Enter')sendChat()" style="flex:1;">
@@ -1112,19 +1131,51 @@ function sendWsRpc(method, params) {
 }
 
 function handleBroadcast(msg) {
-    if (msg.method === 'monitor.health_update' || msg.method === 'monitor.service_recovered') refreshDashboard();
-    if (msg.method === 'incident.created' || msg.method === 'alert.triggered') { refreshDashboard(); refreshIncidents(); }
-    if (msg.method === 'incident.escalated') { refreshIncidents(); }
-    if (msg.method === 'playbook.completed') { addEvent(msg.method, `Playbook finished: ${msg.params?.status}`); }
+    const p = msg.params || {};
+
+    // Layer 1: Narrate all events in the chat
+    if (msg.method === 'monitor.health_update') {
+        refreshDashboard();
+        if (p.status === 'UNHEALTHY') {
+            appendChat('system', `Service <strong>${p.service || '?'}</strong> is now UNHEALTHY: ${p.message || 'unknown error'}`);
+        }
+    }
+    if (msg.method === 'monitor.service_recovered') {
+        refreshDashboard();
+        appendChat('system', `Service <strong>${p.service || '?'}</strong> has recovered and is healthy again.`);
+    }
+    if (msg.method === 'incident.created') {
+        refreshDashboard(); refreshIncidents();
+        appendChat('system', `Incident detected: <strong>${p.title || '?'}</strong> on ${p.service || '?'} [${p.severity || '?'}]`);
+    }
+    if (msg.method === 'alert.triggered') {
+        refreshDashboard(); refreshIncidents();
+        appendChat('system', `Alert fired: <strong>${p.rule_name || '?'}</strong> — ${p.message || '?'}`);
+    }
+    if (msg.method === 'incident.escalated') {
+        refreshIncidents();
+        appendChat('system', `Incident escalated for <strong>${p.service || p.incident_id || '?'}</strong>.`);
+    }
+    if (msg.method === 'playbook.auto_triggered') {
+        appendChat('system', `Auto-triggering playbook '<strong>${p.playbook_name || '?'}</strong>' for ${p.service || '?'}...`);
+    }
+    if (msg.method === 'playbook.auto_trigger_skipped') {
+        appendChat('system', `Playbook '<strong>${p.playbook_name || '?'}</strong>' matches but requires approval — skipped.`);
+    }
+    if (msg.method === 'playbook.step_started') {
+        appendChat('system', `Running step ${p.step || '?'}/${p.total_steps || '?'}: <strong>${p.step_name || '?'}</strong>...`);
+    }
+    if (msg.method === 'playbook.completed') {
+        addEvent(msg.method, `Playbook finished: ${p.status}`);
+        const statusLabel = p.status === 'SUCCESS' ? 'completed successfully' : 'failed';
+        appendChat('system', `Playbook '<strong>${p.playbook || '?'}</strong>' ${statusLabel} (${p.duration_ms || 0}ms).`);
+    }
     if (msg.method === 'approval.requested') {
         refreshApprovals();
-        // Notify in chat that approval is needed
-        const p = msg.params || {};
         appendChat('system', `Approval required for tool <strong>${p.tool_name || '?'}</strong>. Go to the Approvals page to approve or deny.`);
     }
     if (msg.method === 'approval.responded') {
         refreshApprovals();
-        const p = msg.params || {};
         if (p.approved) {
             appendChat('system', `Tool <strong>${p.tool_name || '?'}</strong> approved by ${p.responded_by || 'user'}. Agent is auto-resuming...`);
         } else {
@@ -1132,7 +1183,6 @@ function handleBroadcast(msg) {
         }
     }
     if (msg.method === 'agent.response') {
-        const p = msg.params || {};
         if (p.response) {
             // Remove any lingering "Thinking..." indicator
             const thinkingEl = document.getElementById('chat-thinking');
@@ -1145,8 +1195,7 @@ function handleBroadcast(msg) {
     if (msg.method === 'rca.generated') {
         loadRcaReports();
         refreshRcaBadge();
-        const p = msg.params || {};
-        appendChat('system', `📄 RCA generated for incident <strong>${p.incident_title || p.incident_id || '?'}</strong> — <a href="#" onclick="event.preventDefault();document.querySelector('[data-page=rca]').click();openRcaModal('${p.rca_id}');">Review now</a>`);
+        appendChat('system', `RCA generated for incident <strong>${p.incident_title || p.incident_id || '?'}</strong> — <a href="#" onclick="event.preventDefault();document.querySelector('[data-page=rca]').click();openRcaModal('${p.rca_id}');">Review now</a>`);
     }
     if (msg.method === 'rca.approved') {
         loadRcaReports();
@@ -1156,8 +1205,44 @@ function handleBroadcast(msg) {
         loadRisks();
         refreshRiskBadge();
         loadDashboardRisks();
-        const p = msg.params || {};
-        appendChat('system', `⚠️ New risk identified: <strong>[${p.severity}]</strong> ${p.title || '?'} — Service: ${p.service || 'system-wide'}. <a href="#" onclick="event.preventDefault();document.querySelector('[data-page=risks]').click();">View risks</a>`);
+        appendChat('system', `New risk identified: <strong>[${p.severity}]</strong> ${p.title || '?'} — Service: ${p.service || 'system-wide'}. <a href="#" onclick="event.preventDefault();document.querySelector('[data-page=risks]').click();">View risks</a>`);
+    }
+    // Layer 2: LLM-generated narrations appear as assistant messages
+    if (msg.method === 'jarvis.narration') {
+        appendChat('assistant', formatResponse(p.message || ''));
+    }
+    // Layer 3: Autonomous investigation messages
+    if (msg.method === 'jarvis.autonomous.started') {
+        const el = document.createElement('div');
+        el.className = 'chat-msg assistant autonomous-msg';
+        el.innerHTML = `<div class="autonomous-banner">Jarvis is autonomously investigating: <strong>${p.title || p.event || '?'}</strong></div>`;
+        el.id = 'auto-' + (p.session_id || 'unknown');
+        document.getElementById('chat-messages').appendChild(el);
+        document.getElementById('chat-messages').scrollTop = 999999;
+    }
+    if (msg.method === 'jarvis.autonomous.tool_call') {
+        const container = document.getElementById('auto-' + (p.session_id || 'unknown'));
+        if (container) {
+            const step = document.createElement('div');
+            step.className = 'autonomous-step';
+            step.innerHTML = `<span class="auto-tool-icon">&#9881;</span> Using <strong>${p.tool || '?'}</strong>...`;
+            step.id = 'auto-tool-' + (p.session_id || '') + '-' + (p.tool || '');
+            container.appendChild(step);
+            document.getElementById('chat-messages').scrollTop = 999999;
+        }
+    }
+    if (msg.method === 'jarvis.autonomous.tool_result') {
+        const stepEl = document.getElementById('auto-tool-' + (p.session_id || '') + '-' + (p.tool || ''));
+        if (stepEl) {
+            stepEl.innerHTML = `<span class="auto-tool-icon">&#10003;</span> <strong>${p.tool || '?'}</strong> — ${p.summary || 'done'}`;
+        }
+    }
+    if (msg.method === 'jarvis.autonomous.completed') {
+        appendChat('assistant', '<div class="autonomous-result">' + formatResponse(p.response || 'Investigation complete.') + '</div>');
+    }
+    // Layer 4: Status briefings
+    if (msg.method === 'jarvis.briefing') {
+        appendChat('assistant', '<div class="briefing-msg"><span class="briefing-label">Status Update</span> ' + formatResponse(p.message || '') + '</div>');
     }
 }
 

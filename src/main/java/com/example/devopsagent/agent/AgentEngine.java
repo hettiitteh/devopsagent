@@ -1,6 +1,7 @@
 package com.example.devopsagent.agent;
 
 import com.example.devopsagent.config.AgentProperties;
+import com.example.devopsagent.gateway.GatewayWebSocketHandler;
 import com.example.devopsagent.service.AuditService;
 import com.example.devopsagent.service.ApprovalService;
 import com.example.devopsagent.service.LearningService;
@@ -44,6 +45,7 @@ public class AgentEngine {
     private final AuditService auditService;
     private final ApprovalService approvalService;
     private final LearningService learningService;
+    private final GatewayWebSocketHandler gatewayHandler;
 
     private static final int MAX_ITERATIONS = 25;
     private static final int MAX_CONVERSATION_TOKENS = 128000;
@@ -247,6 +249,16 @@ public class AgentEngine {
                         continue;
                     }
 
+                    // Broadcast tool call progress for autonomous sessions
+                    boolean isAutonomous = sessionId.startsWith("auto-");
+                    if (isAutonomous) {
+                        gatewayHandler.broadcast("jarvis.autonomous.tool_call", Map.of(
+                                "session_id", sessionId,
+                                "tool", toolCall.getName(),
+                                "step", "executing"
+                        ));
+                    }
+
                     try {
                         ToolResult result = tool.get().execute(toolCall.getArguments(), toolContext);
                         toolsUsed.add(toolCall.getName());
@@ -258,12 +270,30 @@ public class AgentEngine {
                                 Map.of("arguments", toolCall.getArguments() != null ? toolCall.getArguments() : Map.of(),
                                        "success", result.isSuccess()),
                                 sessionId, result.isSuccess());
+
+                        if (isAutonomous) {
+                            gatewayHandler.broadcast("jarvis.autonomous.tool_result", Map.of(
+                                    "session_id", sessionId,
+                                    "tool", toolCall.getName(),
+                                    "summary", truncate(resultText, 150),
+                                    "success", result.isSuccess()
+                            ));
+                        }
                     } catch (Exception e) {
                         log.error("Tool {} execution failed: {}", toolCall.getName(), e.getMessage());
                         session.getMessages().add(AgentMessage.toolResult(toolCall.getId(),
                                 "Error executing tool: " + e.getMessage()));
                         auditService.log("agent", "TOOL_EXECUTED", toolCall.getName(),
                                 Map.of("error", e.getMessage()), sessionId, false);
+
+                        if (isAutonomous) {
+                            gatewayHandler.broadcast("jarvis.autonomous.tool_result", Map.of(
+                                    "session_id", sessionId,
+                                    "tool", toolCall.getName(),
+                                    "summary", "Error: " + truncate(e.getMessage(), 100),
+                                    "success", false
+                            ));
+                        }
                     }
                 }
 

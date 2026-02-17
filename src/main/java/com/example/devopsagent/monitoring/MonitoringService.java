@@ -12,6 +12,8 @@ import com.example.devopsagent.repository.IncidentRepository;
 import com.example.devopsagent.repository.MonitoredServiceRepository;
 import com.example.devopsagent.service.AuditService;
 import com.example.devopsagent.service.LearningService;
+import com.example.devopsagent.service.NarrationService;
+import com.example.devopsagent.service.AutonomousInvestigationService;
 import com.example.devopsagent.service.RcaService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -63,6 +65,8 @@ public class MonitoringService {
     private final LlmClient llmClient;
     private final ObjectMapper objectMapper;
     private final EmbeddingService embeddingService;
+    private final NarrationService narrationService;
+    private final AutonomousInvestigationService autonomousInvestigationService;
 
     public MonitoringService(MonitoredServiceRepository serviceRepository,
                              IncidentRepository incidentRepository,
@@ -76,7 +80,9 @@ public class MonitoringService {
                              @Lazy RcaService rcaService,
                              @Lazy LlmClient llmClient,
                              ObjectMapper objectMapper,
-                             @Lazy EmbeddingService embeddingService) {
+                             @Lazy EmbeddingService embeddingService,
+                             @Lazy NarrationService narrationService,
+                             @Lazy AutonomousInvestigationService autonomousInvestigationService) {
         this.serviceRepository = serviceRepository;
         this.incidentRepository = incidentRepository;
         this.properties = properties;
@@ -90,6 +96,8 @@ public class MonitoringService {
         this.llmClient = llmClient;
         this.objectMapper = objectMapper;
         this.embeddingService = embeddingService;
+        this.narrationService = narrationService;
+        this.autonomousInvestigationService = autonomousInvestigationService;
     }
 
     // Health check history for anomaly detection
@@ -336,6 +344,12 @@ public class MonitoringService {
 
             // Embed the new incident for vector similarity search
             embeddingService.embedIncidentAsync(incident);
+
+            // Narrate the incident creation via LLM
+            narrationService.narrateIncidentCreated(incident, triageReasoning);
+
+            // Launch autonomous investigation
+            autonomousInvestigationService.investigateIncident(incident);
         }
 
         // Auto-trigger matching playbooks with the classified severity
@@ -474,6 +488,13 @@ public class MonitoringService {
                 "service", service.getName(),
                 "timestamp", Instant.now().toString()
         ));
+
+        // Narrate the recovery via LLM
+        long downtimeMs = 0;
+        if (!openIncidents.isEmpty() && openIncidents.get(0).getCreatedAt() != null) {
+            downtimeMs = Instant.now().toEpochMilli() - openIncidents.get(0).getCreatedAt().toEpochMilli();
+        }
+        narrationService.narrateServiceRecovered(service.getName(), downtimeMs);
     }
 
     /**

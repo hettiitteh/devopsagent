@@ -11,7 +11,9 @@ import com.example.devopsagent.gateway.GatewayWebSocketHandler;
 import com.example.devopsagent.repository.PlaybookDefinitionRepository;
 import com.example.devopsagent.repository.PlaybookExecutionRepository;
 import com.example.devopsagent.service.AuditService;
+import com.example.devopsagent.service.AutonomousInvestigationService;
 import com.example.devopsagent.service.LearningService;
+import com.example.devopsagent.service.NarrationService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import lombok.RequiredArgsConstructor;
@@ -49,6 +51,8 @@ public class PlaybookEngine {
     private final GatewayWebSocketHandler gatewayHandler;
     private final AuditService auditService;
     private final LearningService learningService;
+    private final NarrationService narrationService;
+    private final AutonomousInvestigationService autonomousInvestigationService;
 
     private final Map<String, Playbook> playbooks = new ConcurrentHashMap<>();
     private final Map<String, PlaybookExecution> runningExecutions = new ConcurrentHashMap<>();
@@ -298,6 +302,18 @@ public class PlaybookEngine {
                 "duration_ms", execution.getExecutionTimeMs()
         ));
 
+        // Narrate the playbook completion via LLM
+        narrationService.narratePlaybookCompleted(
+                playbook.getName(), success, execution.getExecutionTimeMs(), output.toString());
+
+        // On failure, launch autonomous investigation
+        if (!success && !dryRun) {
+            String serviceName = parameters != null && parameters.get("service_name") != null
+                    ? parameters.get("service_name").toString() : playbookId;
+            autonomousInvestigationService.investigatePlaybookFailure(
+                    playbook.getName(), serviceName, output.toString());
+        }
+
         // Audit: playbook completed
         auditService.log("playbook-engine", "PLAYBOOK_COMPLETED", playbookId,
                 Map.of("name", playbook.getName(), "status", execution.getStatus().name(),
@@ -499,6 +515,9 @@ public class PlaybookEngine {
                     "service", serviceName,
                     "incident_id", incidentId != null ? incidentId : ""
             ));
+
+            // Narrate the auto-trigger via LLM
+            narrationService.narratePlaybookTriggered(pb.getName(), serviceName, incidentId);
 
             // Execute the playbook asynchronously (not a dry run)
             // Include service_type so playbook steps with empty params can use it

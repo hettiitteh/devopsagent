@@ -29,6 +29,9 @@ public class AgentProperties {
     private SecurityConfig security = new SecurityConfig();
     private SuggestionsConfig suggestions = new SuggestionsConfig();
     private ProactiveAnalysisConfig proactiveAnalysis = new ProactiveAnalysisConfig();
+    private NarrationConfig narration = new NarrationConfig();
+    private AutonomousConfig autonomous = new AutonomousConfig();
+    private BriefingConfig briefing = new BriefingConfig();
 
     @Data
     public static class GatewayConfig {
@@ -137,6 +140,27 @@ public class AgentProperties {
     public static class ProactiveAnalysisConfig {
         private boolean enabled = true;
         private int intervalMinutes = 30;
+    }
+
+    @Data
+    public static class NarrationConfig {
+        private boolean enabled = true;
+    }
+
+    @Data
+    public static class AutonomousConfig {
+        private boolean enabled = true;
+        private boolean onIncident = true;
+        private boolean onAlert = true;
+        private boolean onPlaybookFailure = true;
+        private String minSeverity = "MEDIUM";
+    }
+
+    @Data
+    public static class BriefingConfig {
+        private boolean enabled = true;
+        private int intervalMinutes = 10;
+        private int quietIntervalMinutes = 30;
     }
 
     @Data

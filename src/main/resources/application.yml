@@ -149,6 +149,24 @@ devops-agent:
     enabled: true
     interval-minutes: 30
 
+  # LLM narration — Jarvis comments on events in natural language
+  narration:
+    enabled: true
+
+  # Autonomous investigation — Jarvis auto-investigates incidents, alerts, playbook failures
+  autonomous:
+    enabled: true
+    on-incident: true
+    on-alert: true
+    on-playbook-failure: true
+    min-severity: MEDIUM
+
+  # Status briefings — periodic and reconnection summaries
+  briefing:
+    enabled: true
+    interval-minutes: 10
+    quiet-interval-minutes: 30
+
   # Security settings
   security:
     audit-enabled: true
