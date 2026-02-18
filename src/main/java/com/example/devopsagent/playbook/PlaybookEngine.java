@@ -471,8 +471,8 @@ public class PlaybookEngine {
      * Called by MonitoringService when an incident is created and auto-execute is enabled.
      * Overload for backward compatibility (no serviceType).
      */
-    public void autoTriggerPlaybooks(String serviceName, String severity, String incidentId) {
-        autoTriggerPlaybooks(serviceName, severity, incidentId, "docker");
+    public List<String> autoTriggerPlaybooks(String serviceName, String severity, String incidentId) {
+        return autoTriggerPlaybooks(serviceName, severity, incidentId, "docker");
     }
 
     /**
@@ -481,16 +481,18 @@ public class PlaybookEngine {
      *
      * @param serviceType the restart type for the service (docker, kubernetes, systemd)
      */
-    public void autoTriggerPlaybooks(String serviceName, String severity, String incidentId, String serviceType) {
+    public List<String> autoTriggerPlaybooks(String serviceName, String severity, String incidentId, String serviceType) {
+        List<String> triggeredPlaybooks = new ArrayList<>();
+
         if (!properties.getPlaybooks().isAutoExecute()) {
             log.debug("Playbook auto-execute is disabled, skipping auto-trigger for service: {}", serviceName);
-            return;
+            return triggeredPlaybooks;
         }
 
         List<Playbook> matching = findMatchingPlaybooks(serviceName, severity);
         if (matching.isEmpty()) {
             log.info("No matching playbooks found for service '{}' with severity '{}'", serviceName, severity);
-            return;
+            return triggeredPlaybooks;
         }
 
         for (Playbook pb : matching) {
@@ -519,14 +521,16 @@ public class PlaybookEngine {
             // Narrate the auto-trigger via LLM
             narrationService.narratePlaybookTriggered(pb.getName(), serviceName, incidentId);
 
-            // Execute the playbook asynchronously (not a dry run)
+            // Execute the playbook synchronously (not a dry run)
             // Include service_type so playbook steps with empty params can use it
             executePlaybook(pb.getId(), incidentId, Map.of(
                     "service_name", serviceName,
                     "service_type", serviceType,
                     "service_url", "http://localhost:9090" // will be overridden by step params if set
             ), false);
+            triggeredPlaybooks.add(pb.getName());
         }
+        return triggeredPlaybooks;
     }
 
     /**

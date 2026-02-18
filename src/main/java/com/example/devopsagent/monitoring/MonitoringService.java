@@ -348,19 +348,18 @@ public class MonitoringService {
             // Narrate the incident creation via LLM
             narrationService.narrateIncidentCreated(incident, triageReasoning);
 
-            // Launch autonomous investigation
-            autonomousInvestigationService.investigateIncident(incident);
         }
 
-        // Auto-trigger matching playbooks with the classified severity
-        // Map MonitoredService.ServiceType to the service_restart tool's type string
+        // Auto-trigger matching playbooks FIRST (sync), so we know if remediation
+        // is already being handled before launching the autonomous investigation.
         String serviceTypeForRestart = switch (service.getType()) {
             case DOCKER_CONTAINER -> "docker";
             case KUBERNETES_DEPLOYMENT, KUBERNETES_STATEFULSET -> "kubernetes";
             default -> "systemd";
         };
+        List<String> triggeredPlaybooks = List.of();
         try {
-            playbookEngine.autoTriggerPlaybooks(
+            triggeredPlaybooks = playbookEngine.autoTriggerPlaybooks(
                     service.getName(),
                     classifiedSeverity.name(),
                     incidentId,
@@ -368,6 +367,14 @@ public class MonitoringService {
             );
         } catch (Exception e) {
             log.error("Failed to auto-trigger playbooks for service {}: {}", service.getName(), e.getMessage());
+        }
+
+        // Launch autonomous investigation AFTER playbooks, passing playbook context
+        if (properties.getIncidents().isAutoCreate() && incidentId != null) {
+            Incident incident = incidentRepository.findById(incidentId).orElse(null);
+            if (incident != null) {
+                autonomousInvestigationService.investigateIncident(incident, triggeredPlaybooks);
+            }
         }
     }
 

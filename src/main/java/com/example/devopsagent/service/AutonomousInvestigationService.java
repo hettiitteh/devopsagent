@@ -11,6 +11,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -40,18 +41,39 @@ public class AutonomousInvestigationService {
 
     @Async
     public void investigateIncident(Incident incident) {
+        investigateIncident(incident, List.of());
+    }
+
+    @Async
+    public void investigateIncident(Incident incident, List<String> triggeredPlaybooks) {
         if (!properties.getAutonomous().isEnabled() || !properties.getAutonomous().isOnIncident()) return;
         if (!meetsMinSeverity(incident.getSeverity())) return;
         if (isDebounced(incident.getService())) return;
 
         String sessionId = "auto-" + incident.getId();
         String title = incident.getTitle();
-        String prompt = String.format(
-                "An incident has been detected: '%s' on service '%s'. Severity: %s. " +
-                "Error: %s. Investigate this issue: check health, examine logs, " +
-                "check Docker/K8s status, and attempt remediation. Report your findings concisely.",
-                incident.getTitle(), incident.getService(), incident.getSeverity(),
-                truncate(incident.getDescription(), 500));
+        String prompt;
+        if (triggeredPlaybooks != null && !triggeredPlaybooks.isEmpty()) {
+            prompt = String.format(
+                    "An incident has been detected: '%s' on service '%s'. Severity: %s. " +
+                    "Error: %s. " +
+                    "IMPORTANT: The following remediation playbook(s) have ALREADY been auto-triggered " +
+                    "and have completed execution for this incident: %s. " +
+                    "Do NOT attempt to restart the service or run any redundant remediation — " +
+                    "the playbook has already handled it. " +
+                    "Instead, focus on: verifying that the service has recovered (health check), " +
+                    "examining logs for root cause, and reporting your findings concisely.",
+                    incident.getTitle(), incident.getService(), incident.getSeverity(),
+                    truncate(incident.getDescription(), 500),
+                    String.join(", ", triggeredPlaybooks));
+        } else {
+            prompt = String.format(
+                    "An incident has been detected: '%s' on service '%s'. Severity: %s. " +
+                    "Error: %s. Investigate this issue: check health, examine logs, " +
+                    "check Docker/K8s status, and attempt remediation. Report your findings concisely.",
+                    incident.getTitle(), incident.getService(), incident.getSeverity(),
+                    truncate(incident.getDescription(), 500));
+        }
 
         runInvestigation(sessionId, title, prompt, incident.getService());
     }
