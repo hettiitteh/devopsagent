@@ -215,16 +215,66 @@
         }
         .modal h3 { font-size: 16px; margin-bottom: 16px; }
 
+        /* ─── How It Works: Hero ─── */
+        .hero-section { text-align: center; padding: 40px 24px 32px; }
+        .hero-section h2 {
+            font-size: 28px; font-weight: 800; letter-spacing: -.5px; margin-bottom: 8px;
+            background: linear-gradient(135deg, var(--accent), var(--blue));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .hero-section .hero-tagline { font-size: 15px; color: var(--text-dim); max-width: 720px; margin: 0 auto 24px; line-height: 1.7; }
+        .hero-stats {
+            display: flex; justify-content: center; gap: 32px; flex-wrap: wrap;
+            padding: 16px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+        }
+        .hero-stat { text-align: center; }
+        .hero-stat .hero-stat-value { font-size: 22px; font-weight: 700; color: var(--accent); }
+        .hero-stat .hero-stat-label { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-dim); margin-top: 2px; }
+
+        /* ─── How It Works: Autonomous Pipeline ─── */
+        .pipeline-flow { display: flex; gap: 0; align-items: stretch; overflow-x: auto; padding: 16px 0; }
+        .pipeline-step {
+            flex: 1; min-width: 130px; background: var(--bg-input); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 14px 12px; text-align: center; position: relative;
+        }
+        .pipeline-step .pipeline-num {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 26px; height: 26px; border-radius: 50%; font-size: 12px; font-weight: 700;
+            background: var(--accent); color: #fff; margin-bottom: 8px;
+        }
+        .pipeline-step h4 { font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+        .pipeline-step p { font-size: 11px; color: var(--text-dim); line-height: 1.5; }
+        .pipeline-arrow { display: flex; align-items: center; color: var(--accent); font-size: 18px; padding: 0 4px; flex-shrink: 0; }
+        .pipeline-callout {
+            margin-top: 16px; padding: 14px 18px; background: rgba(108,114,255,.08);
+            border: 1px solid rgba(108,114,255,.25); border-radius: var(--radius); font-size: 12px;
+            color: var(--text-dim); line-height: 1.7;
+        }
+        .pipeline-callout strong { color: var(--accent); }
+
+        /* ─── How It Works: Platform Tour Grid ─── */
+        .platform-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 10px;
+        }
+        .platform-card {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 12px 14px; display: flex; gap: 10px; align-items: flex-start;
+        }
+        .platform-card .platform-icon { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
+        .platform-card .platform-info h4 { font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 2px; }
+        .platform-card .platform-info p { font-size: 11px; color: var(--text-dim); line-height: 1.4; }
+
         /* ─── Architecture Diagram ─── */
         .arch-flow { display: flex; flex-direction: column; gap: 12px; align-items: center; padding: 20px 0; }
         .arch-box {
             background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius);
-            padding: 14px 24px; text-align: center; width: 100%; max-width: 600px;
+            padding: 14px 24px; text-align: center; width: 100%; max-width: 700px;
         }
         .arch-box h4 { color: var(--accent); font-size: 13px; margin-bottom: 4px; }
         .arch-box p { font-size: 12px; color: var(--text-dim); }
         .arch-arrow { color: var(--text-dim); font-size: 20px; }
-        .arch-row { display: flex; gap: 12px; width: 100%; max-width: 600px; }
+        .arch-row { display: flex; gap: 12px; width: 100%; max-width: 700px; }
         .arch-row .arch-box { flex: 1; }
 
         /* ─── Scrollbar ─── */
@@ -381,9 +431,74 @@
 
         <!-- Architecture / How It Works -->
         <div class="page" id="page-architecture">
-            <div class="page-header">
-                <h2>How It Works</h2>
-                <p>An intelligent SRE agent with gateway-centric orchestration, enhanced with vector embeddings, self-improving learning, and LLM-driven reasoning</p>
+            <div class="hero-section">
+                <h2>Meet Jarvis &mdash; Your Autonomous SRE Engineer</h2>
+                <p class="hero-tagline">
+                    Jarvis detects production incidents, investigates root causes, executes remediation playbooks, and learns from every resolution &mdash; autonomously, 24/7.
+                    When a service goes down at 3 AM, Jarvis doesn't page you first. It triages the severity, runs the right playbook, verifies recovery, generates a root cause analysis,
+                    and has a summary waiting for you in the morning. Humans stay in control at every critical decision point.
+                </p>
+                <div class="hero-stats">
+                    <div class="hero-stat"><div class="hero-stat-value">14</div><div class="hero-stat-label">SRE Tools</div></div>
+                    <div class="hero-stat"><div class="hero-stat-value">10</div><div class="hero-stat-label">Policy Layers</div></div>
+                    <div class="hero-stat"><div class="hero-stat-value">14</div><div class="hero-stat-label">Platform Pages</div></div>
+                    <div class="hero-stat"><div class="hero-stat-value">15+</div><div class="hero-stat-label">AI Services</div></div>
+                    <div class="hero-stat"><div class="hero-stat-value">11</div><div class="hero-stat-label">Prompt Sections</div></div>
+                </div>
+            </div>
+
+            <!-- Autonomous Pipeline -->
+            <div class="card">
+                <div class="card-title">The Autonomous Pipeline &mdash; From Detection to Resolution</div>
+                <p style="font-size:13px;color:var(--text-dim);margin-bottom:16px;">When a service goes unhealthy, this entire pipeline runs without a single human prompt:</p>
+                <div class="pipeline-flow">
+                    <div class="pipeline-step">
+                        <div class="pipeline-num">1</div>
+                        <h4>Detect</h4>
+                        <p>Scheduled health checks (HTTP, TCP, Docker, K8s) detect HEALTHY&rarr;UNHEALTHY transitions</p>
+                    </div>
+                    <div class="pipeline-arrow">&rarr;</div>
+                    <div class="pipeline-step">
+                        <div class="pipeline-num">2</div>
+                        <h4>Triage</h4>
+                        <p>LLM classifies severity using history, success rates, failure count &amp; time-of-day patterns</p>
+                    </div>
+                    <div class="pipeline-arrow">&rarr;</div>
+                    <div class="pipeline-step">
+                        <div class="pipeline-num">3</div>
+                        <h4>Incident</h4>
+                        <p>Auto-creates a tracked incident, embeds it as a vector, narrates it to the chat in real time</p>
+                    </div>
+                    <div class="pipeline-arrow">&rarr;</div>
+                    <div class="pipeline-step">
+                        <div class="pipeline-num">4</div>
+                        <h4>Playbook</h4>
+                        <p>Matching playbooks execute first: verify &rarr; diagnose &rarr; remediate &rarr; verify recovery</p>
+                    </div>
+                    <div class="pipeline-arrow">&rarr;</div>
+                    <div class="pipeline-step">
+                        <div class="pipeline-num">5</div>
+                        <h4>Investigate</h4>
+                        <p>LLM agent starts with full playbook context &mdash; verifies recovery, analyzes logs, finds root cause</p>
+                    </div>
+                    <div class="pipeline-arrow">&rarr;</div>
+                    <div class="pipeline-step">
+                        <div class="pipeline-num">6</div>
+                        <h4>RCA</h4>
+                        <p>On recovery: auto-generates Root Cause Analysis with timeline, impact &amp; lessons learned</p>
+                    </div>
+                    <div class="pipeline-arrow">&rarr;</div>
+                    <div class="pipeline-step">
+                        <div class="pipeline-num">7</div>
+                        <h4>Learn</h4>
+                        <p>Resolution embedded as a vector &mdash; informs future recommendations across all services</p>
+                    </div>
+                </div>
+                <div class="pipeline-callout">
+                    <strong>Playbook-Aware Coordination:</strong> Playbooks execute first and complete before the autonomous investigation begins.
+                    The LLM investigation receives the names of triggered playbooks and is explicitly instructed not to duplicate remediation.
+                    When a playbook has already restarted a service, the agent focuses on verification and root-cause analysis instead.
+                </div>
             </div>
 
             <!-- Architecture Overview -->
@@ -394,27 +509,32 @@
                         <h4>Gateway (Port 18789)</h4>
                         <p>WebSocket + HTTP JSON-RPC server. All clients, UIs, and integrations communicate through this single entry point. Manages sessions, routes messages, and broadcasts real-time events across the entire platform.</p>
                     </div>
-                    <div class="arch-arrow">↕</div>
+                    <div class="arch-arrow">&darr;</div>
                     <div class="arch-box" style="border-color:var(--blue);">
                         <h4>Agent Engine (LLM-Powered Agentic Loop)</h4>
-                        <p>Receives a task, builds a dynamic 11-section system prompt (including learning insights and semantic recommendations), sends to GPT-4o with tool definitions, executes tool calls through the policy engine, and loops until done. Human approval gates pause the loop for sensitive actions and resume automatically once approved.</p>
+                        <p>Receives a task, builds a dynamic 11-section system prompt (including learning insights and semantic recommendations), sends to GPT-4o with tool definitions, executes tool calls through the 10-layer policy engine, and loops until done. Human approval gates pause the loop for sensitive actions and resume automatically once approved. Narration Service streams real-time natural-language commentary of every event to the chat.</p>
                     </div>
-                    <div class="arch-arrow">↕</div>
+                    <div class="arch-arrow">&darr;</div>
                     <div class="arch-row">
-                        <div class="arch-box"><h4>Tool Policy Engine</h4><p>Profile-based access control (minimal / sre / full). Config-driven approval lists allow runtime toggling of which tools need human sign-off before execution.</p></div>
+                        <div class="arch-box"><h4>10-Layer Tool Policy Engine</h4><p>10 cascading policy layers: DB config &rarr; profile &rarr; provider-specific &rarr; global &rarr; per-agent &rarr; agent-provider &rarr; group &rarr; sandbox &rarr; subagent. A deny at any layer blocks the tool. Runtime-toggleable approval requirements for sensitive actions.</p></div>
                         <div class="arch-box"><h4>Dynamic System Prompt</h4><p>11 sections assembled per-session: Identity, Capabilities, Tools, Safety, Context, Monitoring Rules, Incident Protocol, Playbook Standards, Learning Insights, Semantic Recommendations, and Time.</p></div>
                     </div>
-                    <div class="arch-arrow">↕</div>
+                    <div class="arch-arrow">&darr;</div>
                     <div class="arch-row">
                         <div class="arch-box"><h4>14 SRE Tools</h4><p>health_check, metrics_query, log_search, kubectl_exec, docker_exec, ssh_exec, service_restart, playbook_run, playbook_create, incident_manage, alert_manage, network_diag, system_info, learning_query.</p></div>
                         <div class="arch-box"><h4>Playbook Engine (DB-Backed)</h4><p>Database-persisted runbooks with ordered steps, multi-severity triggers, retry/abort/continue handling, auto-trigger on incidents, dry-run support, enable/disable toggle, and playbook authoring standards enforced by the LLM.</p></div>
                     </div>
-                    <div class="arch-arrow">↕</div>
+                    <div class="arch-arrow">&darr;</div>
                     <div class="arch-row">
-                        <div class="arch-box"><h4>Monitoring Service</h4><p>Per-service scheduled health checks, state transition detection (HEALTHY/UNHEALTHY), LLM-driven severity triage, auto-incident creation, auto-playbook triggering, and auto-resolution tracking.</p></div>
-                        <div class="arch-box"><h4>Incident &amp; RCA Pipeline</h4><p>Auto-created incidents with LLM-classified severity. On resolution: auto-generates a comprehensive Root Cause Analysis report (summary, timeline, root cause, impact, lessons learned, preventive measures) sent for human review.</p></div>
+                        <div class="arch-box"><h4>Monitoring Service</h4><p>Per-service scheduled health checks (HTTP, TCP, Docker, K8s), state transition detection (HEALTHY/UNHEALTHY), LLM-driven severity triage, auto-incident creation, playbook-first auto-triggering, and auto-resolution tracking.</p></div>
+                        <div class="arch-box" style="border-color:var(--orange);"><h4>Autonomous Investigation</h4><p>When incidents occur, Jarvis starts its own LLM agent session &mdash; no human prompt needed. Checks health, examines logs, inspects infrastructure. Playbook-aware: receives context on what was already done and never duplicates remediation.</p></div>
                     </div>
-                    <div class="arch-arrow">↕</div>
+                    <div class="arch-arrow">&darr;</div>
+                    <div class="arch-row">
+                        <div class="arch-box"><h4>Incident &amp; RCA Pipeline</h4><p>Auto-created incidents with LLM-classified severity. On resolution: auto-generates a comprehensive Root Cause Analysis (summary, timeline, root cause, impact, lessons learned, preventive measures) sent for human review.</p></div>
+                        <div class="arch-box"><h4>Alert Rules &amp; Anomaly Detector</h4><p>Database-backed alert rules with threshold conditions (greater than, less than, rate change, absence). Evaluated on schedule with cooldown periods. Auto-fires alerts, creates incidents, and triggers autonomous investigations.</p></div>
+                    </div>
+                    <div class="arch-arrow">&darr;</div>
                     <div class="arch-row">
                         <div class="arch-box" style="border-color:var(--green);">
                             <h4>Learning &amp; Memory System</h4>
@@ -422,13 +542,18 @@
                         </div>
                         <div class="arch-box" style="border-color:var(--green);">
                             <h4>Vector Embeddings (Semantic Search)</h4>
-                            <p>Incidents, resolutions, and RCA reports are embedded via OpenAI text-embedding-3-small. In-memory cosine similarity enables fast semantic search, cross-service pattern transfer, and near-duplicate playbook detection — replacing expensive multi-LLM-call keyword search.</p>
+                            <p>Incidents, resolutions, and RCA reports are embedded via OpenAI text-embedding-3-small. In-memory cosine similarity enables fast semantic search, cross-service pattern transfer, and near-duplicate playbook detection.</p>
                         </div>
                     </div>
-                    <div class="arch-arrow">↕</div>
+                    <div class="arch-arrow">&darr;</div>
                     <div class="arch-row">
                         <div class="arch-box"><h4>Proactive Risk Assessment</h4><p>Every 30 minutes, the LLM analyzes recent incidents, metrics, and patterns to identify emerging risks before they become incidents. Risks are surfaced on the dashboard for human review.</p></div>
                         <div class="arch-box"><h4>AI Playbook Suggestions</h4><p>Frequency-based pattern detection + LLM-powered analysis identify recurring resolution patterns and suggest new automated playbooks. Suggestions go through human approval before activation.</p></div>
+                    </div>
+                    <div class="arch-arrow">&darr;</div>
+                    <div class="arch-row">
+                        <div class="arch-box"><h4>Security Audit Service</h4><p>Hourly automated security scanning: validates command allowlists, detects injection patterns, audits tool policies, and reports findings with severity levels. Dedicated review page for security findings.</p></div>
+                        <div class="arch-box"><h4>Plugin System</h4><p>Extensible plugin architecture. Plugins can register custom tools, hooks, channels, and Gateway RPC methods. Discovered, validated, and loaded at startup for seamless extensibility.</p></div>
                     </div>
                 </div>
             </div>
@@ -441,7 +566,7 @@
                     <li><strong style="color:var(--text)">Dynamic system prompt assembled</strong> — includes current context (active incidents, unhealthy services), learning insights from past resolutions, semantic recommendations from similar problems across services, and playbook authoring standards</li>
                     <li><strong style="color:var(--text)">Message + 14 tool definitions sent to LLM</strong> (OpenAI GPT-4o)</li>
                     <li><strong style="color:var(--text)">LLM responds</strong> with reasoning text and/or tool calls</li>
-                    <li><strong style="color:var(--text)">Tool calls are policy-checked</strong> — if the tool requires human approval, an approval request is created and the loop pauses until a human approves via the UI</li>
+                    <li><strong style="color:var(--text)">Tool calls pass through the 10-layer policy engine</strong> — DB config, profile, provider, global, per-agent, group, sandbox, and subagent layers are evaluated in order. If the tool requires human approval, the loop pauses until a human approves via the UI</li>
                     <li><strong style="color:var(--text)">Approved tools are executed</strong>, results appended to conversation and sent back to LLM</li>
                     <li><strong style="color:var(--text)">Loop continues</strong> (max 25 iterations). If the conversation approaches the 128K token limit, it is intelligently compacted using LLM-based summarization that preserves key facts, tool results, and decisions</li>
                     <li><strong style="color:var(--text)">On completion</strong>, the tool sequence is recorded in the learning system. If the session resolved an incident, the resolution pattern informs future recommendations</li>
@@ -480,20 +605,88 @@
                     <p>&#x25B8; <strong style="color:var(--text)">RCA Review</strong> — After every resolved incident, the LLM generates a detailed Root Cause Analysis. It is sent for human review where the reviewer can edit, approve, or reject (with optional regeneration).</p>
                     <p>&#x25B8; <strong style="color:var(--text)">Playbook Suggestions</strong> — When the AI identifies recurring patterns worth automating, it proposes new playbooks. Humans review, approve, or dismiss each suggestion before it becomes active.</p>
                     <p>&#x25B8; <strong style="color:var(--text)">Risk Assessment</strong> — Proactive risk analysis runs every 30 minutes. Identified risks are surfaced on the dashboard for human triage — the agent flags, the human decides.</p>
+                    <p>&#x25B8; <strong style="color:var(--text)">Security Audit</strong> — Hourly automated security scanning with findings surfaced on a dedicated review page. Command allowlist enforcement, injection pattern detection, and policy compliance checks.</p>
                 </div>
             </div>
 
             <!-- Key Capabilities -->
             <div class="card">
-                <div class="card-title">What Makes This Agent Different</div>
+                <div class="card-title">What Makes Jarvis Different</div>
                 <div style="font-size:13px;color:var(--text-dim);line-height:1.8;">
                     <p>&#x2726; <strong style="color:var(--text)">Autonomous &amp; Tool-Using</strong> — 14 specialized SRE tools to interact with real infrastructure: health checks, Docker/Kubernetes management, SSH, service restarts, playbook execution, incident management, network diagnostics, and more</p>
-                    <p>&#x2726; <strong style="color:var(--text)">Self-Improving</strong> — Learns from every resolution across three channels. Success rates and tool patterns are tracked per service and fed back into the LLM's context. Suggests new playbooks from recurring patterns</p>
-                    <p>&#x2726; <strong style="color:var(--text)">Semantic Memory</strong> — Vector embeddings (OpenAI text-embedding-3-small) enable meaning-based search across incidents, resolutions, and RCA reports. Replaces expensive multi-LLM-call keyword search with fast cosine similarity</p>
+                    <p>&#x2726; <strong style="color:var(--text)">Autonomous Investigation</strong> — When incidents occur, Jarvis starts its own LLM-powered investigation without a human prompt. It checks health, examines logs, inspects containers, and reports findings. Playbook-aware: never duplicates what automated playbooks have already done</p>
+                    <p>&#x2726; <strong style="color:var(--text)">Self-Improving</strong> — Learns from every resolution across three channels (chat, playbook, auto-recovery). Success rates and tool patterns are tracked per service and fed back into the LLM's context. Suggests new playbooks from recurring patterns</p>
+                    <p>&#x2726; <strong style="color:var(--text)">Semantic Memory</strong> — Vector embeddings (OpenAI text-embedding-3-small) enable meaning-based search across incidents, resolutions, and RCA reports. Cross-service knowledge transfer: resolving a MySQL timeout informs future PostgreSQL timeout resolutions</p>
                     <p>&#x2726; <strong style="color:var(--text)">LLM-Driven Intelligence</strong> — Severity triage, incident search ranking, RCA generation, risk assessment, playbook suggestions, and conversation compaction are all powered by LLM reasoning, not hardcoded rules</p>
-                    <p>&#x2726; <strong style="color:var(--text)">Proactive</strong> — Monitoring runs in the background with per-service configurable intervals. Unhealthy services trigger LLM-classified incidents, auto-fire matching playbooks, and on recovery auto-generate RCA reports</p>
-                    <p>&#x2726; <strong style="color:var(--text)">Human-in-the-Loop</strong> — Approval workflow for sensitive tools, RCA review process, playbook suggestion approval, and risk triage keep humans in control of critical decisions</p>
-                    <p>&#x2726; <strong style="color:var(--text)">Policy-Governed</strong> — Profile-based tool access with runtime-toggleable approval requirements prevent unauthorized actions. Full audit trail of every tool execution and system event</p>
+                    <p>&#x2726; <strong style="color:var(--text)">Real-Time Narration</strong> — Every system event &mdash; incident creation, playbook execution, service recovery, alert firing &mdash; is narrated in natural language by the LLM and streamed to the chat. Jarvis doesn't just act, it explains what it's doing and why</p>
+                    <p>&#x2726; <strong style="color:var(--text)">Proactive</strong> — Monitoring runs in the background with per-service configurable intervals. Unhealthy services trigger LLM-classified incidents, auto-fire matching playbooks, and on recovery auto-generate RCA reports. Every 30 minutes, proactive risk analysis identifies emerging threats</p>
+                    <p>&#x2726; <strong style="color:var(--text)">Human-in-the-Loop</strong> — Approval workflow for sensitive tools, RCA review process, playbook suggestion approval, security audit review, and risk triage keep humans in control of critical decisions</p>
+                    <p>&#x2726; <strong style="color:var(--text)">10-Layer Policy Engine</strong> — 10 cascading policy layers from DB config to subagent restrictions. A deny at any layer blocks the tool. Runtime-toggleable approval requirements and full audit trail of every tool execution and system event</p>
+                    <p>&#x2726; <strong style="color:var(--text)">Extensible</strong> — Plugin architecture for custom tools, hooks, and integrations. Database-backed alert rules with flexible conditions. LLM-authored playbooks with enforced authoring standards. 14 platform pages for full operational visibility</p>
+                </div>
+            </div>
+
+            <!-- Platform Tour -->
+            <div class="card">
+                <div class="card-title">The Platform at a Glance &mdash; 14 Pages</div>
+                <p style="font-size:13px;color:var(--text-dim);margin-bottom:14px;">Every aspect of Jarvis is observable and controllable through dedicated pages:</p>
+                <div class="platform-grid">
+                    <div class="platform-card">
+                        <div class="platform-icon">📊</div>
+                        <div class="platform-info"><h4>Dashboard</h4><p>Real-time overview of service health, active incidents, and system status</p></div>
+                    </div>
+                    <div class="platform-card">
+                        <div class="platform-icon">💬</div>
+                        <div class="platform-info"><h4>Agent Chat</h4><p>Conversational interface &mdash; ask Jarvis to investigate, diagnose, and remediate</p></div>
+                    </div>
+                    <div class="platform-card">
+                        <div class="platform-icon">🔧</div>
+                        <div class="platform-info"><h4>Tools</h4><p>14 SRE tools with runtime enable/disable, approval toggles, and execution history</p></div>
+                    </div>
+                    <div class="platform-card">
+                        <div class="platform-icon">📡</div>
+                        <div class="platform-info"><h4>Monitoring</h4><p>Per-service health checks with configurable intervals and state tracking</p></div>
+                    </div>
+                    <div class="platform-card">
+                        <div class="platform-icon">🚨</div>
+                        <div class="platform-info"><h4>Incidents</h4><p>Auto-created incidents with LLM-classified severity and lifecycle tracking</p></div>
+                    </div>
+                    <div class="platform-card">
+                        <div class="platform-icon">✋</div>
+                        <div class="platform-info"><h4>Approvals</h4><p>Human approval queue for sensitive tool executions with approve/deny controls</p></div>
+                    </div>
+                    <div class="platform-card">
+                        <div class="platform-icon">🔔</div>
+                        <div class="platform-info"><h4>Alert Rules</h4><p>Database-backed alerting with threshold conditions and anomaly detection</p></div>
+                    </div>
+                    <div class="platform-card">
+                        <div class="platform-icon">📋</div>
+                        <div class="platform-info"><h4>Playbooks</h4><p>Automated runbooks with ordered steps, auto-triggers, and AI-suggested additions</p></div>
+                    </div>
+                    <div class="platform-card">
+                        <div class="platform-icon">📄</div>
+                        <div class="platform-info"><h4>RCA Reports</h4><p>LLM-generated Root Cause Analysis with timeline, impact, and lessons learned</p></div>
+                    </div>
+                    <div class="platform-card">
+                        <div class="platform-icon">⚠️</div>
+                        <div class="platform-info"><h4>Risk Assessment</h4><p>Proactive LLM-driven risk identification &mdash; emerging patterns surfaced for review</p></div>
+                    </div>
+                    <div class="platform-card">
+                        <div class="platform-icon">🧠</div>
+                        <div class="platform-info"><h4>Learnings</h4><p>Resolution patterns, success rates per service, and AI-suggested playbooks</p></div>
+                    </div>
+                    <div class="platform-card">
+                        <div class="platform-icon">📝</div>
+                        <div class="platform-info"><h4>Audit Log</h4><p>Complete trail of every tool execution, approval, and system event</p></div>
+                    </div>
+                    <div class="platform-card">
+                        <div class="platform-icon">📜</div>
+                        <div class="platform-info"><h4>Live Events</h4><p>Real-time WebSocket event stream from the Gateway</p></div>
+                    </div>
+                    <div class="platform-card">
+                        <div class="platform-icon">🛡️</div>
+                        <div class="platform-info"><h4>Security Audit</h4><p>Automated security scanning with command and policy compliance checks</p></div>
+                    </div>
                 </div>
             </div>
         </div>
